@@ -1,5 +1,3 @@
-![q-e-logo](logo.jpg)
-
 This is the distribution of the Quantum ESPRESSO suite of codes (ESPRESSO:
 opEn-Source Package for Research in Electronic Structure, Simulation, and
 Optimization)
