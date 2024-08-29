@@ -235,9 +235,9 @@ program dynmat
                & permittivity computed with TO-LO splitting'
         ENDIF
         !
-        CALL dump_ir_raman(prefix, nat, omega, w2, z, zstar, eps0, dchi_dtau)
-        !
      ENDIF
+     !
+     CALL dump_ir_raman(prefix, nat, omega, w2, z, zstar, eps0, dchi_dtau)
   ENDIF
   !
   IF (xmldyn) THEN

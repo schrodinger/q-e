@@ -13,6 +13,7 @@ SUBROUTINE d2ionq_dispd3( alat, nat, at, q, der2disp )
   USE control_ph,    ONLY: dftd3_hess
   USE constants,     ONLY: tpi
   USE control_lr,    ONLY: lgamma
+  USE disp,          ONLY: lgamma_iq
   USE dftd3_qe,      ONLY: print_dftd3_hessian
   USE d3hess_mod,    ONLY: q_gamma, d3hess_sub, AUTOMATIC_NAME
   USE mp_images,     ONLY: intra_image_comm
@@ -54,6 +55,8 @@ SUBROUTINE d2ionq_dispd3( alat, nat, at, q, der2disp )
       IF ( TRIM(dftd3_hess) .EQ. TRIM(outdir)//AUTOMATIC_NAME ) THEN
         do_run_d3hess = .TRUE.
         WRITE( stdout, '(/,5x,A)') 'Computing d3hess.'
+        ! Set correct d3hess_mod's q_gamma value
+        q_gamma = ALL(lgamma_iq .EQ. .TRUE.)
       ELSE
         CALL errore('d2ionq_dispd3', 'The Hessian file: '//TRIM(dftd3_hess)// &
                     ' is missing.', 1)
@@ -64,10 +67,9 @@ SUBROUTINE d2ionq_dispd3( alat, nat, at, q, der2disp )
   END IF
   !
   CALL mp_bcast(do_run_d3hess, ionode_id, intra_image_comm)
+  CALL mp_bcast(q_gamma, ionode_id, intra_image_comm)
   !
   IF (do_run_d3hess) THEN
-     ! Set correct d3hess_mod's q_gamma value
-     q_gamma = lgamma
      CALL d3hess_sub(dftd3_hess)
   END IF
   !
