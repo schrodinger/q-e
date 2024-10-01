@@ -93,7 +93,7 @@ INTEGER :: last_irr_eff
 !
   last_irr_eff=last_irr
   IF (last_irr > nirr.or.last_irr<0) last_irr_eff=nirr
-  IF (start_irr > 1) comp_irr(0:start_irr-1) = .FALSE.
+  IF (start_irr > 1) comp_irr(0:min(start_irr-1,nirr)) = .FALSE.
   IF (last_irr_eff < nirr ) comp_irr(last_irr_eff+1:nirr) = .FALSE.
 
 !
@@ -164,4 +164,4 @@ SUBROUTINE set_local_atomo(nat, nat_todo, atomo, nsym, irt,  nat_l, atomo_l)
    ALLOCATE (atomo_l(nat_l))
    atomo_l = PACK([(na,na=1,nat)], MASK = ifat == 1)
    DEALLOCATE(ifat)
-END SUBROUTINE set_local_atomo 
+END SUBROUTINE set_local_atomo
