@@ -1391,6 +1391,7 @@ CONTAINS
       END IF
       !
       IF ( .NOT.file_exists ) THEN
+         CLOSE( UNIT = 4, STATUS = 'DELETE' )
          !
          ! ... the file is absent :  simulation is starting from scratch
          !
