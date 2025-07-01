@@ -1502,6 +1502,9 @@ CONTAINS
       !
       CLOSE( UNIT = 4, STATUS = 'KEEP' )
       !
+      elapsed_time = elapsed_time + dt*2.D0*au_ps
+      CALL dump_trajectory_frame( elapsed_time, temperature )
+      !
       ! ... here the tau are shifted
       !
       tau(:,:) = tau_new(:,:)
