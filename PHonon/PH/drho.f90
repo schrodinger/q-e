@@ -6,7 +6,6 @@
 ! or http://www.gnu.org/copyleft/gpl.txt .
 !
 !-----------------------------------------------------------------------
-
 subroutine drho
   !-----------------------------------------------------------------------
   !! Here we compute, for each mode the change of the charge density
@@ -28,14 +27,15 @@ subroutine drho
   USE uspp,       ONLY : okvan, nkb
   USE wvfct,      ONLY : nbnd
   USE paw_variables,    ONLY : okpaw
-  USE control_ph, ONLY : ldisp, all_done, rec_code_read
-
+  USE control_ph, ONLY : all_done
   USE lrus,       ONLY : becp1
+  USE klist,      ONLY : lgauss
+  USE two_chem,   ONLY : twochem
   USE qpoint,     ONLY : nksq
-  USE control_lr, ONLY : lgamma
+  USE control_lr, ONLY : lgamma, rec_code_read
 
   USE dynmat,     ONLY : dyn00
-  USE modes,      ONLY : npertx, npert, nirr
+  USE modes,      ONLY : npertx, npert, nirr, u
   USE phus,       ONLY : becsumort, alphap
   USE units_ph,   ONLY : lrdrhous, iudrhous
 
@@ -89,8 +89,10 @@ subroutine drho
   !    due to the displacement of the augmentation charge
   !
   call compute_becsum_ph()
+  if(twochem.and.lgamma.and.lgauss) call compute_becsum_ph_cond()
   !
   call compute_alphasum()
+  if(twochem.and.lgamma.and.lgauss) call compute_alphasum_cond()
   !
   !    then compute the weights
   !
@@ -123,7 +125,7 @@ subroutine drho
   !   now we compute the change of the charge density due to the change of
   !   the orthogonality constraint
   !
-  allocate (drhous ( dfftp%nnr, nspin_mag , 3 * nat))
+  allocate (drhous ( dffts%nnr, nspin_mag , 3 * nat))
   allocate (dbecsum( nhm * (nhm + 1) /2, nat, nspin_mag, 3 * nat))
   dbecsum=(0.d0,0.d0)
   call start_clock('drhous')
@@ -156,7 +158,7 @@ subroutine drho
   wdyn (:,:) = (0.d0, 0.d0)
   nrstot = dffts%nr1 * dffts%nr2 * dffts%nr3
   do nu_i = 1, 3 * nat
-     call compute_dvloc (nu_i, dvlocin)
+     call compute_dvloc (u(1, nu_i), .FALSE., dvlocin)
      do nu_j = 1, 3 * nat
         do is = 1, nspin_lsda
         ! FIXME: use zgemm instead of dot_product

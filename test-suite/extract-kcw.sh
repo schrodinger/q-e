@@ -17,8 +17,8 @@ args=$(echo $fname | awk -F= '{print $NF}')
 
 ### if [[ "$args" == "1" ]]
 ##  then
-# SCF
-e1=`grep ! $fname | tail -1 | awk '{printf "%12.6f\n", $5}'`
+# SCF'
+e1=`grep ^! $fname | tail -1 | awk '{printf "%12.6f\n", $5}'`
 n1=`grep 'convergence has' $fname | tail -1 | awk '{print $6}'`
 f1=`grep "Total force" $fname | head -1 | awk '{printf "%8.4f\n", $4}'`
 p1=`grep "P= " $fname | tail -1 | awk '{print $6}'`
@@ -36,7 +36,7 @@ eig1=`head -1  $fname | awk '{print $3}'`
 omega=`grep "Omega Total" $fname | awk '{print $7}'`
 
 ## WANN2KCW
-sh=`grep "orb     1" $fname | awk '{print $4}'`
+sh=`grep "orb     1" $fname | awk '{print $4}' | tail -1`
 
 ##KCW screen
 rpi=`grep "iwann  =     1" $fname | awk '{print $6}'`

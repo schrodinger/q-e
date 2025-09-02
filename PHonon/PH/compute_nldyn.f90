@@ -26,12 +26,9 @@ subroutine compute_nldyn (wdyn, wgg, becq, alpq)
   USE partial,          ONLY : nat_todo, nat_todo_input, atomo, set_local_atomo
   USE phus,             ONLY : alphap, int1, int2, &
                                int2_so, int1_nc
-  USE control_ph,       ONLY : rec_code_read
-
   USE lrus,             ONLY : becp1
   USE qpoint,           ONLY : nksq, ikks, ikqs
-  USE control_lr,       ONLY : nbnd_occ
-
+  USE control_lr,       ONLY : nbnd_occ, rec_code_read
   USE mp_bands,         ONLY : intra_bgrp_comm, me_bgrp, nproc_bgrp
   USE mp,               ONLY : mp_sum
   USE becmod,           ONLY : bec_type
@@ -250,7 +247,7 @@ end if
            else 
               na = na_l 
            end if
-           if (ityp (na) .eq.nt ) then
+           if (ityp (na) .eq.nt .and. nh(nt) > 0 ) then
               ijkb0 = ofsbeta(na)
               ijkbnh = ijkb0 + nh(nt)
               do ipol = 1, 3
@@ -336,7 +333,7 @@ end if
                           else 
                             nb = nb_l
                           end if
-                          if (ityp (nb) == ntb) then
+                          if (ityp (nb) == ntb .and. nh(ntb) > 0 ) then
                              ijkb0b = ofsbeta(nb)
                              ijkb1b = ijkb0b + 1 
                              ijkbnb = ijkb0b + nh(ntb)

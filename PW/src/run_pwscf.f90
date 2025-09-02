@@ -179,7 +179,7 @@ SUBROUTINE run_pwscf( exit_status )
      ! ... electronic self-consistency or band structure calculation
      !
 #if defined (__OSCDFT)
-     IF (use_oscdft) THEN
+     IF (use_oscdft .AND. (oscdft_ctx%inp%oscdft_type==1)) THEN
         CALL oscdft_run_pwscf(oscdft_ctx)
      ELSE
 #endif
@@ -380,7 +380,7 @@ SUBROUTINE reset_gvectors( )
   !! energy computed with G-vectors and plane waves for the final cell
   !
   USE io_global,  ONLY : stdout
-  USE basis,      ONLY : starting_wfc, starting_pot
+  USE starting_scf, ONLY : starting_wfc, starting_pot
   USE fft_base,   ONLY : dfftp
   USE fft_base,   ONLY : dffts
   USE xc_lib,     ONLY : xclib_dft_is

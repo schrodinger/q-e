@@ -30,14 +30,12 @@ SUBROUTINE phq_readin()
   USE lsda_mod,      ONLY : lsda, nspin
   USE cellmd,        ONLY : lmovecell
   USE run_info,      ONLY : title
-  USE control_ph,    ONLY : maxter, alpha_mix, lgamma_gamma, epsil, &
-                            zue, zeu, xmldyn, newgrid,                      &
-                            trans, reduce_io, tr2_ph, niter_ph,       &
-                            nmix_ph, ldisp, recover, lnoloc, start_irr, &
+  USE control_ph,    ONLY : epsil, zue, zeu, xmldyn, newgrid,                      &
+                            trans, ldisp, recover, lnoloc, start_irr, &
                             last_irr, start_q, last_q, current_iq, tmp_dir_ph, &
                             ext_recover, ext_restart, u_from_file, ldiag, &
                             search_sym, lqdir, electron_phonon, tmp_dir_phq, &
-                            rec_code_read, qplot, only_init, only_wfc, &
+                            qplot, only_init, only_wfc, &
                             low_directory_check, nk1, nk2, nk3, k1, k2, k3, &
                             dftd3_hess
   USE save_ph,       ONLY : tmp_dir_save, save_ph_input_variables
@@ -64,7 +62,8 @@ SUBROUTINE phq_readin()
   USE dfile_star,    ONLY : drho_star, dvscf_star
 
   USE qpoint,        ONLY : nksq, xq
-  USE control_lr,    ONLY : lgamma, lrpa
+  USE control_lr,    ONLY : lgamma, lrpa, alpha_mix, lgamma_gamma, tr2_ph, niter_ph, &
+                            nmix_ph, maxter, reduce_io, rec_code_read, lmultipole, lnolr
   ! YAMBO >
   USE YAMBO,         ONLY : elph_yambo,dvscf_yambo
   ! YAMBO <
@@ -76,11 +75,11 @@ SUBROUTINE phq_readin()
   USE dvscf_interpolate, ONLY : ldvscf_interpolate, do_long_range, &
       do_charge_neutral, wpot_dir
   USE ahc,           ONLY : elph_ahc, ahc_dir, ahc_nbnd, ahc_nbndskip, &
-      skip_upperfan
+      skip_upper
   USE read_namelists_module, ONLY : check_namelist_read
   USE open_close_input_file, ONLY : open_input_file, close_input_file
   USE el_phon,       ONLY : kx, ky, kz, elph_print
-  USE d3hess_mod,            ONLY: AUTOMATIC_NAME
+  USE two_chem,      ONLY : twochem
   !
   IMPLICIT NONE
   !
@@ -128,7 +127,7 @@ SUBROUTINE phq_readin()
                        lshift_q, read_dns_bare, d2ns_type, diagonalization, &
                        ldvscf_interpolate, do_long_range, do_charge_neutral, &
                        wpot_dir, ahc_dir, ahc_nbnd, ahc_nbndskip, &
-                       skip_upperfan, dftd3_hess, kx, ky, kz
+                       skip_upper, dftd3_hess, kx, ky, kz, lmultipole
 
   ! tr2_ph       : convergence threshold
   ! amass        : atomic masses
@@ -168,6 +167,7 @@ SUBROUTINE phq_readin()
   ! ldiag        : if .true. force diagonalization of the dyn mat
   ! lqdir        : if .true. each q writes in its own directory
   ! search_sym   : if .true. analyze symmetry if possible
+  ! kx, ky, kz   : when specified in input, search that k-point to print el-ph matrix element
   ! nk1,nk2,nk3, k1,k2,k3 :
   !              when specified in input, the phonon run uses a different
   !              k-point mesh from that used for the charge density.
@@ -210,9 +210,10 @@ SUBROUTINE phq_readin()
   ! ahc_dir: Directory where the output binary files for AHC e-ph coupling are written
   ! ahc_nbnd: Number of bands where the electron self-energy is to be computed.
   ! ahc_nbndskip: Number of bands to exclude when computing the self-energy.
-  ! skip_upperfan: If .true., skip the calculation of upper Fan self-energy.
+  ! skip_upper: If .true., skip the calculation of upper Fan self-energy.
   !
   ! dftd3_hess: file from where the dftd3 hessian is read
+  ! lmultipole : If .true. macroscopic density response to q-potential perturbation is written as output
   !
   ! Note: meta_ionode is a single processor that reads the input
   !       (ionode is also a single processor but per image)
@@ -325,7 +326,7 @@ SUBROUTINE phq_readin()
   ahc_dir = ' '
   ahc_nbnd = 0
   ahc_nbndskip = 0
-  skip_upperfan = .FALSE.
+  skip_upper = .FALSE.
   !
   drho_star%open = .FALSE.
   drho_star%basis = 'modes'
@@ -415,7 +416,7 @@ SUBROUTINE phq_readin()
      IF (alpha_mix (iter) .LT.0.D0.OR.alpha_mix (iter) .GT.1.D0) CALL &
           errore ('phq_readin', ' Wrong alpha_mix ', iter)
   ENDDO
-  IF (niter_ph.LT.1.OR.niter_ph.GT.maxter) CALL errore ('phq_readin', &
+  IF (niter_ph < 0 .OR. niter_ph > maxter) CALL errore ('phq_readin', &
        ' Wrong niter_ph ', 1)
   IF (iverbosity.NE.0.AND.iverbosity.NE.1) CALL errore ('phq_readin', &
        &' Wrong  iverbosity ', 1)
@@ -482,13 +483,6 @@ SUBROUTINE phq_readin()
      elph=.false.
   END SELECT
 
-  ! YAMBO >
-  IF (.not.elph_yambo.and..not.dvscf_yambo) then
-    ! YAMBO <
-    IF (qplot.AND..NOT.ldisp) CALL errore('phq_readin','qplot requires ldisp=.true.',1)
-    !
-  ENDIF
-
   IF (ldisp.AND.only_init.AND.(.NOT.lqdir)) &
      CALL errore('phq_readin', &
                  'only_init=.TRUE. requires lqdir=.TRUE. or data are lost',1)
@@ -504,8 +498,8 @@ SUBROUTINE phq_readin()
   ENDIF
   !
   ! Set default value for fildrho and fildvscf if they are required
-  IF ( (lraman.OR.elop.OR.drho_star%open) .AND. fildrho == ' ') fildrho = 'drho'
-  IF ( (elph_mat.OR.dvscf_star%open) .AND. fildvscf == ' ') fildvscf = 'dvscf'
+  IF ( (lraman.OR.elop.OR.drho_star%open.or.lmultipole) .AND. fildrho == ' ') fildrho = 'drho'
+  IF ( (elph_mat.OR.dvscf_star%open.or.lmultipole) .AND. fildvscf == ' ') fildvscf = 'dvscf'
   !
   !  We can calculate  dielectric, raman or elop tensors and no Born effective
   !  charges dF/dE, but we cannot calculate Born effective charges dF/dE
@@ -519,14 +513,15 @@ SUBROUTINE phq_readin()
      ios = 0
      IF (qplot) THEN
         READ (qestdin, *, iostat = ios) nqaux
-     ELSE
-        IF (.NOT. ldisp) READ (qestdin, *, iostat = ios) (xq (ipol), ipol=1,3)
+     ELSE IF (.NOT. ldisp) THEN
+        nqaux = 1
+        READ (qestdin, *, iostat = ios) (xq (ipol), ipol=1,3)
      ENDIF
   END IF
+  CALL mp_bcast(nqaux, meta_ionode_id, world_comm )
   CALL mp_bcast(ios, meta_ionode_id, world_comm )
   CALL errore ('phq_readin', 'reading xq', ABS (ios) )
   IF (qplot) THEN
-     CALL mp_bcast(nqaux, meta_ionode_id, world_comm )
      ALLOCATE(xqaux(3,nqaux))
      ALLOCATE(wqaux(nqaux))
      IF (meta_ionode) THEN
@@ -547,6 +542,11 @@ SUBROUTINE phq_readin()
      IF ( (epsil.OR.zue.or.lraman.or.elop) .AND..NOT.lgamma) &
                 CALL errore ('phq_readin', 'gamma is needed for elec.field', 1)
   ENDIF
+
+  IF (magnetic_sym.AND.(epsil.OR.zue.or.lraman.or.elop)) &
+          CALL errore ('phq_readin', ' The phonon code with noncollinear magnetism &
+            & and electric field is not implemented', 1)
+
   IF (zue.AND..NOT.trans) CALL errore ('phq_readin', 'trans must be &
        &.t. for Zue calc.', 1)
 
@@ -774,15 +774,15 @@ SUBROUTINE phq_readin()
           " Electron-phonon with Hubbard U is not supported",1)
      IF (lraman) CALL errore("phq_readin", &
           " The phonon code with Raman and Hubbard U is not implemented",1)
+     IF (magnetic_sym) CALL errore("phq_readin", &
+          " The phonon code with noncollinear magnetism and Hubbard U is not implemented", 1)
      !
   ENDIF
   ! checks
   IF (elph_ahc .AND. domag) CALL errore ('phq_readin', &
     'elph_ahc and magnetism not implemented', 1)
-  IF (elph_ahc .AND. okpaw) CALL errore ('phq_readin', &
-    'elph_ahc and PAW not tested.', 1)
   IF (elph_ahc .AND. okvan) CALL errore ('phq_readin', &
-    'elph_ahc and PAW not tested.', 1)
+    'elph_ahc and USPP or PAW not tested', 1)
   IF (elph_ahc .AND. lda_plus_u) CALL errore ('phq_readin', &
     'elph_ahc and lda_plus_u not tested.', 1)
 
@@ -833,11 +833,8 @@ SUBROUTINE phq_readin()
       'el-ph with wannier : specify bands range with elph_nbnd_min,elph_nbnd_max',1)
   END IF
 
-  IF (elph .AND. okpaw) CALL errore('phq_readin',&
-     'Electron-phonon calculations with PAW not tested',1)
-
-  IF(elph.and.nimage>1) call errore('phq_readin',&
-       'el-ph with images not implemented',1)
+  IF((elph .AND. .NOT. elph_ahc) .AND. nimage > 1) CALL errore('phq_readin',&
+       'el-ph with images not implemented', 1)
 
   IF (elph.OR.fildvscf /= ' ') lqdir=.TRUE.
 
@@ -847,8 +844,8 @@ SUBROUTINE phq_readin()
        'drho_star with image parallelization is not yet available',1)
 
   IF (lda_plus_u .AND. read_dns_bare .AND. ldisp) lqdir=.TRUE.
-
-  IF (.NOT.ldisp) lqdir=.FALSE.
+  ! FIXME: Why not setting lqdir =.true always?
+  IF (.NOT.ldisp.AND..NOT.qplot) lqdir=.FALSE.
 
   IF (i_cons /= 0) &
      CALL errore('phq_readin',&
@@ -861,6 +858,20 @@ SUBROUTINE phq_readin()
   IF (tqr) CALL errore('phq_readin',&
      'The phonon code with Q in real space not available',1)
 
+  IF (lmultipole)  THEN
+     ! FM : incompatibility for lmultipole
+     lnolr = .TRUE.
+     IF (okvan .or. domag) CALL errore('phq_readin',&
+     'lmultipole only for norm-conserving potential and no magnetization', 1)
+     IF (ltetra .OR. lgauss) CALL errore('phq_readin',&
+     'lmultipole does not work with metal', 1)
+     IF (epsil) CALL errore('phq_readin',&
+     'lmultipole is already an electric field calculation', 1)
+#if defined(__CUDA)
+     CALL errore('phq_readin','multipoles for GPU not present in this version', 1)
+#endif
+  END IF
+  !
   IF (start_irr < 0 ) CALL errore('phq_readin', 'wrong start_irr',1)
   !
   IF (start_q <= 0 ) CALL errore('phq_readin', 'wrong start_q',1)
@@ -941,7 +952,8 @@ SUBROUTINE phq_readin()
   ! end of reading, close unit qestdin, remove temporary input file if existing
   ! FIXME: closing input file here breaks alpha2F.x that reads what follows
   !   IF (meta_ionode) ios = close_input_file ()
-
+  !
+  IF (twochem.AND.elph) CALL errore ('phq_readin', 'electron-phonon with twochem approach not yet implemented',1)
   IF (epsil.AND.(lgauss .OR. ltetra)) &
         CALL errore ('phq_readin', 'no elec. field with metals', 1)
   IF (modenum > 0) THEN
@@ -969,7 +981,7 @@ SUBROUTINE phq_readin()
   !
   ! If dftd3_hess is not specified, use a default name set from prefix
   !
-  IF ( dftd3_hess == ' ' ) dftd3_hess = AUTOMATIC_NAME
+  IF ( dftd3_hess == ' ' ) dftd3_hess = trim(prefix)//'.hess'
   dftd3_hess = TRIM(tmp_dir)//TRIM(dftd3_hess)
 
   CALL save_ph_input_variables()

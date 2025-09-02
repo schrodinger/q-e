@@ -26,7 +26,7 @@ SUBROUTINE summary()
   USE gvecs,           ONLY : doublegrid, ngms, ngms_g, gcutms
   USE fft_base,        ONLY : dfftp
   USE fft_base,        ONLY : dffts
-  USE vlocal,          ONLY : starting_charge
+  USE starting_scf,    ONLY : starting_charge
   USE lsda_mod,        ONLY : lsda, starting_magnetization
   USE ldaU,            ONLY : lda_plus_u
   USE klist,           ONLY : degauss, smearing, lgauss, ltetra, nkstot, xk, &
@@ -55,6 +55,11 @@ SUBROUTINE summary()
   USE environment,     ONLY : print_cuda_info
   USE london_module,   ONLY : print_london
   USE dftd3_qe,        ONLY : dftd3_printout, dftd3, dftd3_in
+  USE dynamics_module, ONLY : dt 
+  USE control_flags,   ONLY : tnosep
+  USE ions_nose,       ONLY : ions_nose_info 
+  USE cell_nose,       ONLY : cell_nose_info 
+
   !
 #if defined (__ENVIRON)
   USE plugin_flags,        ONLY : use_environ
@@ -165,6 +170,8 @@ SUBROUTINE summary()
 #if defined (__ENVIRON)
   IF (use_environ) CALL print_environ_summary()
 #endif
+CALL ions_nose_info(dt)
+CALL cell_nose_info(dt) 
   !
   ! ... CUDA
   !
@@ -267,7 +274,7 @@ SUBROUTINE summary()
              (na, atm(ityp(na)), na, (tau(ipol,na), ipol=1,3), na=1,nat)
   !
   IF ( ALLOCATED( if_pos ) ) THEN
-     IF ( ANY( if_pos(:,:) == 0 ) ) THEN
+     IF ( ANY( if_pos(:,:) == 0 ) .AND. iverbosity > 0 ) THEN
         WRITE( stdout, '(/5x,"Fixed atoms",/5x,"site n.  direction")')
         WRITE( stdout,'(6x,i4,1x,3i4)') (na, if_pos(:,na), na=1,nat)
      ENDIF
@@ -362,8 +369,7 @@ SUBROUTINE summary()
   ENDIF
 
   IF ( real_space ) WRITE( stdout, &
-       & '(5x,"Real space treatment of Beta functions,", &
-       &      " V.1 (BE SURE TO CHECK MANUAL!)")' )
+       & '(5x,"Real space treatment of Beta functions (CHECK MANUAL) ")' )
   IF ( tbeta_smoothing ) WRITE( stdout, '(5x,"Beta functions are smoothed ")' )
   IF ( tqr ) WRITE( stdout, '(5x,"Real space treatment of Q(r)")' )
   IF ( tq_smoothing ) WRITE( stdout, '(5x,"Augmentation charges are smoothed ")' )
@@ -475,6 +481,7 @@ SUBROUTINE print_symmetries ( iverbosity, noncolin, domag )
                                  gname_is, sname_is, code_group_is
   USE cell_base,          ONLY : at, ibrav
   USE fft_base,           ONLY : dfftp
+  USE noncollin_module,   ONLY : colin_mag
   !
   IMPLICIT NONE
   !
@@ -537,7 +544,17 @@ SUBROUTINE print_symmetries ( iverbosity, noncolin, domag )
            ELSE
               CALL find_u(sr(1,1,isym),d_spin(1,1,isym))
            END IF
+        ELSE IF( colin_mag == 2 ) THEN
+           WRITE(stdout,*) 'Time Reversal ', t_rev(isym)
+           IF (t_rev(isym)==0) THEN
+              nsym_is=nsym_is+1
+              sr_is(:,:,nsym_is) = sr(:,:,isym)
+              ! CALL find_u(sr_is(1,1,nsym_is), d_spin_is(1,1,nsym_is))
+              ft_is(:,nsym_is)=ft(:,isym)
+              sname_is(nsym_is)=sname(isym)
+           END IF
         END IF
+
         IF ( ANY ( ABS(ft(:,isym)) > eps6 ) ) THEN
            ftcart(:) = at(:,1)*ft(1,isym) + at(:,2)*ft(2,isym) + &
                        at(:,3)*ft(3,isym)
@@ -575,7 +592,7 @@ SUBROUTINE print_symmetries ( iverbosity, noncolin, domag )
      !
      IF ( ibrav == 0 ) RETURN
      !
-     IF (noncolin.AND.domag) THEN
+     IF ( noncolin.AND.domag ) THEN
         CALL find_group(nsym_is,sr_is,gname_is,code_group_is)
         CALL set_irr_rap_so(code_group_is,nclass_ref,nrap,char_mat_so, &
              name_rap_so,name_class_so,name_class_so1)
@@ -585,23 +602,30 @@ SUBROUTINE print_symmetries ( iverbosity, noncolin, domag )
              'point double group ?',1)
         CALL set_class_el_name_so(nsym_is,sname_is,has_e,nclass,nelem_so, &
                                   elem_so,elem_name_so)
-     ELSE
-        IF (noncolin) THEN
-           CALL set_irr_rap_so(code_group,nclass_ref,nrap,char_mat_so, &
-                name_rap_so,name_class_so,name_class_so1)
-           CALL divide_class_so(code_group,nsym,sr,d_spin,has_e,nclass,  &
-                nelem_so, elem_so,which_irr_so)
-           IF (nclass.ne.nclass_ref) CALL errore('summary', &
-                'point double group ?',1)
-           CALL set_class_el_name_so(nsym,sname,has_e,nclass,nelem_so, &
-                                     elem_so,elem_name_so)
-        ELSE
-           CALL set_irr_rap(code_group,nclass_ref,char_mat,name_rap, &
-                name_class,ir_ram)
-           CALL divide_class(code_group,nsym,sr,nclass,nelem,elem,which_irr)
-           IF (nclass.ne.nclass_ref) CALL errore('summary','point group ?',1)
-           CALL set_class_el_name(nsym,sname,nclass,nelem,elem,elem_name)
-        ENDIF
+     ELSE IF (noncolin) THEN
+        CALL set_irr_rap_so(code_group,nclass_ref,nrap,char_mat_so, &
+             name_rap_so,name_class_so,name_class_so1)
+        CALL divide_class_so(code_group,nsym,sr,d_spin,has_e,nclass,  &
+             nelem_so, elem_so,which_irr_so)
+        IF (nclass.ne.nclass_ref) CALL errore('summary', &
+             'point double group ?',1)
+        CALL set_class_el_name_so(nsym,sname,has_e,nclass,nelem_so, &
+                                  elem_so,elem_name_so)
+     ! if the symmetries with time-reversal are detected in collinear case
+     ELSE IF ( colin_mag == 2 ) THEN
+        CALL find_group(nsym_is,sr_is,gname_is,code_group_is)
+        CALL set_irr_rap(code_group_is,nclass_ref,char_mat,name_rap, &
+             name_class,ir_ram)
+        CALL divide_class(code_group_is,nsym_is,sr_is,nclass,nelem,elem,which_irr)
+        IF (nclass.ne.nclass_ref) CALL errore('summary','point group ?',1)
+        CALL set_class_el_name(nsym_is,sname_is,nclass,nelem,elem,elem_name)
+     ! if the symmetries with time-reversal are not detected in collinear case
+     ELSE ! IF( colin_mag <= 1 )
+        CALL set_irr_rap(code_group,nclass_ref,char_mat,name_rap, &
+             name_class,ir_ram)
+        CALL divide_class(code_group,nsym,sr,nclass,nelem,elem,which_irr)
+        IF (nclass.ne.nclass_ref) CALL errore('summary','point group ?',1)
+        CALL set_class_el_name(nsym,sname,nclass,nelem,elem,elem_name)
      ENDIF
      CALL write_group_info(.true.)
      !

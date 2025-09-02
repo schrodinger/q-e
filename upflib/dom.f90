@@ -5,10 +5,12 @@
 ! in the root directory of the present distribution,
 ! or http://www.gnu.org/copyleft/gpl.txt .
 !
+#undef __debug
+  !! define __debug to print information on opened and closed tags
 module dom
-  !
-  ! Poor-man FoX_dom replacement - Paolo Giannozzi, 2022
-  !
+  !!
+  !! Poor-man FoX_dom replacement - Paolo Giannozzi, 2022-2024
+  !!
   implicit none
   !
   integer, parameter :: dp = selected_real_kind(14,200)
@@ -23,8 +25,8 @@ module dom
      character(:), allocatable :: tag
      character(:), allocatable :: attr
      character(:), allocatable :: data
-     type (node), pointer  :: prev => null()
-     type (nodelist), allocatable :: linklist
+     type (node),     pointer  :: prev => null()
+     type (nodelist), pointer  :: linklist => null()
   end type node
   ! Used for check: parsing and cleaning should end at level -1
   integer :: nlevel = -1
@@ -34,6 +36,15 @@ module dom
   type :: domexception
      integer :: code
   end type domexception
+  ! The following machinery is used only to ensure that linked lists
+  ! produced by "getelementsbytagname" are properly deallocated when
+  ! "destroy" is called. Not sure this is the smartest way to do that.
+  ! "meta-list" ml is a linked list to linked lists (!)
+  type :: metalist
+     type(nodelist), pointer :: linklist => null()
+     type(metalist), pointer :: prevmeta => null()
+  end type metalist
+  type(metalist), pointer :: ml => null()
   !
   private
   ! Callable routines or interfaces
@@ -101,7 +112,7 @@ CONTAINS
   !
   function parse ( iun, strbuf, ex )
     ! This is where the action is: parse either from unit "iun"
-    ! of from a buffer "strbuf", returns a pointer to the node "root"
+    ! or from a buffer "strbuf", returns a pointer to the node "root"
     ! and optionally an error code in "ex"
     character(len=*), intent (in), optional :: strbuf
     integer, intent(in), optional :: iun
@@ -211,6 +222,9 @@ CONTAINS
     type(node), pointer :: prev
     integer :: n, nl, n1, n2, n3, m
     logical :: is_found
+#if defined(_AOCC)
+    character(:), allocatable:: temp
+#endif
     !
     ! Initialization
     if ( firstline ) then
@@ -234,15 +248,21 @@ CONTAINS
           if ( line(n:n2) == ']]>' ) then
              in_comment = .false.
              n = n+3
-             ! print *, 'debug: cdata ends'
+#if defined ( __debug )
+             print *, 'debug: cdata ends'
+#endif
           else if ( line(n:n2) == '-->' ) then
              in_comment = .false.
              n = n+3
-             ! print *, 'debug: comment ends'
+#if defined ( __debug )
+             print *, 'debug: comment ends'
+#endif
           else if ( line(n:n1) == '?>' ) then
              in_comment = .false.
              n = n+2
-             ! print *, 'debug: process ends'
+#if defined ( __debug )
+             print *, 'debug: process ends'
+#endif
           else
              n = n+1
           end if
@@ -255,22 +275,30 @@ CONTAINS
              if ( line(n1:n2) == '!--' ) then
                 n = n+4
                 in_comment = .true.
-                ! print *, 'debug: comment begins'
+#if defined ( __debug )
+                print *, 'debug: comment begins'
+#endif
              else if ( line(n1:n3) == '![CDATA[' ) then
                 n = n+9
                 in_comment = .true.
-                ! print *, 'debug: cdata begins'
+#if defined ( __debug )
+                print *, 'debug: cdata begins'
+#endif
              else if ( line(n1:n1) == '?' ) then
                 n = n+2
                 in_comment = .true.
-                ! print *, 'debug: process begins'
+#if defined ( __debug )
+                print *, 'debug: process begins'
+#endif
              else if ( line(n1:n1) == '/' ) then
                 ! tag = trim( open_tags(nlevel) )
                 tag = curr%tag
                 n = n+2
                 m = min(n+len_trim(tag)+1,nl)
                 if ( line(n:m) == trim(tag)//'>' ) then
-                   ! print *, 'debug: closing tag </',trim(tag),'> found'
+#if defined ( __debug )
+                   print *, 'debug: closing tag </',trim(tag),'> found'
+#endif
                    prev => curr%prev
                    curr => prev
                    in_data = .false.
@@ -297,7 +325,9 @@ CONTAINS
                       is_found = .true.
                       in_data  = .true.
                       in_attribute = .false.
-                   else if ( line(m:m) == ' ' .or. m == nl ) then
+                   else if ( line(m:m) == ' ' .or. line(m:m) == '/' &
+                                              .or. m == nl ) then
+                      ! case '/' may occur for empty tags like "<tag/>"
                       if ( m == n+1 ) then
                          if ( .not.present(ex) ) &
                               print *, 'error: space after <'
@@ -310,11 +340,13 @@ CONTAINS
                    end if
                    if ( is_found ) then
                       tag = line(n+1:m-1)
-                      !if ( in_attribute ) then
-                      !   print *, 'debug: tag with attributes ',trim(tag),'...'
-                      !else
-                      !   print *, 'debug: tag <',trim(tag),'> found'
-                      !endif
+#if defined ( __debug )
+                      if ( in_attribute ) then
+                         print *, 'debug: tag with attributes ',trim(tag),'...'
+                      else
+                         print *, 'debug: tag <',trim(tag),'> found'
+                      endif
+#endif
                       nlevel = nlevel + 1
                       ! open_tags(nlevel) = trim(tag)
                       allocate(next)
@@ -334,6 +366,7 @@ CONTAINS
                          end if
                          curr => root
                          root = next
+                         deallocate(next)
                       end if
                       !
                       n = m+1
@@ -349,14 +382,18 @@ CONTAINS
           else if ( line(n:n) == '>' ) then
              if ( in_attribute ) then
                 if ( line(n-1:n-1) == '/' ) then
-                   ! print *, 'info short tag ',trim(tag),' found'
+#if defined ( __debug )
+                   print *, 'info short tag ',trim(tag),' found'
+#endif
                    ! remove slash from attribute
                    curr%attr(len(curr%attr):len(curr%attr)) = ' '
                    prev => curr%prev
                    curr => prev
                    nlevel = nlevel - 1
                 else
-                   ! print *, 'debug: tag with attributes ',trim(tag),' found'
+#if defined ( __debug )
+                   print *, 'debug: tag with attributes ',trim(tag),' found'
+#endif
                    in_data = .true.
                 end if
                 in_attribute = .false.
@@ -370,11 +407,21 @@ CONTAINS
           else
              if ( in_attribute ) then
                 if ( .not. allocated(curr%attr) ) curr%attr = ' '
+#if defined(_AOCC)
+                temp = curr%attr // line(n:n) 
+                curr%attr = temp
+#else
                 curr%attr = curr%attr // line(n:n) 
+#endif
              end if
              if ( in_data      ) then
                 if ( .not. allocated(curr%data) ) curr%data = ' '
+#if defined(_AOCC)
+                temp = curr%data // line(n:n) 
+                curr%data = temp
+#else
                 curr%data = curr%data // line(n:n) 
+#endif
              end if
              n = n+1
           end if
@@ -382,7 +429,14 @@ CONTAINS
     end do scanline
     ! if data extends over more than one line, add space between lines
     if ( in_data .and. associated(curr) ) then
-       if ( allocated(curr%data) ) curr%data = curr%data // ' '
+       if ( allocated(curr%data) ) then
+#if defined(_AOCC)
+          temp = curr%data // ' ' 
+          curr%data = temp
+#else
+          curr%data = curr%data // ' '
+#endif
+          end if
     end if
 
   end function parseline
@@ -394,11 +448,11 @@ CONTAINS
   !
   subroutine add_to_list(linklist, next)
     type(node), pointer :: next
-    type(nodelist), allocatable, target :: linklist
+    type(nodelist), pointer :: linklist
     type(nodelist), pointer :: nextlist
     type(nodelist), pointer :: currlist
     !
-    if ( .not. allocated(linklist) ) then
+    if ( .not. associated(linklist) ) then
        allocate(linklist)
        linklist%node => next
        linklist%nextlist => null()
@@ -417,8 +471,13 @@ CONTAINS
   !
   recursive subroutine destroy ( curr, iun )
     !
+    ! This (obscure) code goes down recursively into the "curr" tree,
+    ! then deallocates (hopefully) everything. If "iun" is present,
+    ! the tree is reprinted to unit "iun". Useful for debugging: the
+    ! reprinted tree should have the same structure as the original file
+    !
     type(node), pointer :: curr, next
-    type(nodelist), pointer :: linklist
+    type(nodelist), pointer :: linklist, nextlist
     integer, intent(in), optional :: iun
     !
     nlevel = nlevel + 1
@@ -432,32 +491,56 @@ CONTAINS
        end if
        if ( allocated(curr%data) ) write(iun,'(A)') trim(curr%data)
     end if
-    if ( allocated( curr%linklist ) ) then
-       linklist => curr%linklist
-       next  => linklist%node
-       lista: do
-          call destroy ( next, iun )
-          if ( .not. associated( linklist%nextlist ) ) exit lista
-          linklist => linklist%nextlist
-          next  =>  linklist%node
-       end do lista
-    end if
+    ! Go down recursively on the tree (note the call to itself below)
+    linklist => curr%linklist
+    do while ( associated(linklist) )
+       call destroy(linklist%node, iun)
+       nextlist => linklist%nextlist
+       deallocate (linklist)
+       ! The linked list must be explicitly deallocated to avoid memory leaks
+       linklist => nextlist
+    end do
     !
     if ( present(iun ) ) write(iun,'("</",A,">")') trim(curr%tag)
     nlevel = nlevel - 1
+    ! now deallocate all memory
+    if ( allocated(curr%tag) ) deallocate (curr%tag)
+    if ( allocated(curr%data) ) deallocate (curr%data)
+    if ( allocated(curr%attr) ) deallocate (curr%attr)
+    !
     if ( associated(curr%prev) ) then
+       ! go down one level and deallocate
        next => curr%prev
        deallocate(curr)
        curr => next
     else
-       ! if ( nlevel /= -1 ) print *, 'destroy: something not right'
-       if ( allocated(curr%tag ) ) deallocate (curr%tag)
-       if ( allocated(curr%data) ) deallocate (curr%data)
-       if ( allocated(curr%attr) ) deallocate (curr%attr)
-       if ( allocated(curr%linklist) ) deallocate (curr%linklist)
+       call destroyml ( )
+       if ( nlevel /= -1 ) print *, 'destroy: did not reach root level?'
     end if
     !
   end subroutine destroy
+  !
+  subroutine destroyll (linklist)
+    type(nodelist), pointer :: linklist
+    type(nodelist), pointer :: nextlist
+    do while ( associated(linklist) )
+       nextlist => linklist%nextlist
+       deallocate(linklist)
+       ! if ( .not.associated(nextlist) ) exit
+       linklist =>nextlist
+    end do
+  end subroutine destroyll
+  !
+  subroutine destroyml ( )
+    type(metalist), pointer :: prevml
+    ! deallocate all linked lists by going back into "ml"
+    do while ( associated(ml) )
+       call destroyll(ml%linklist)
+       prevml => ml%prevmeta
+       deallocate (ml)
+       ml => prevml
+    end do
+  end subroutine destroyml
   !
   function getelementsbytagname(root,tag)
     !
@@ -466,11 +549,12 @@ CONTAINS
     type(nodelist), pointer :: getelementsbytagname
     !
     type(nodelist), pointer :: linklist, outlist, newlist
+    type(metalist), pointer :: nextml
     integer :: n
     !
     n = -1
     getelementsbytagname => null()
-    if ( allocated( root%linklist ) ) then
+    if ( associated( root%linklist ) ) then
        linklist => root%linklist
        lista: do
           if ( trim(adjustl(tag)) == linklist%node%tag ) then
@@ -490,6 +574,19 @@ CONTAINS
           if ( .not. associated( linklist%nextlist ) ) exit lista
           linklist => linklist%nextlist
        end do lista
+       !
+       ! Store linked list at the end of "meta-list" ml,
+       ! keeping track of the previous one, for later deallocation
+       !
+       if ( .not.associated(ml) ) then
+          allocate(ml)
+       else
+          allocate(nextml)
+          nextml%prevmeta => ml
+          ml => nextml
+       end if
+       ml%linklist => getelementsbytagname
+       !
     end if
     ! if ( n < 0 ) print *, ' tag: ',tag,' not found'
     !

@@ -20,7 +20,7 @@ SUBROUTINE c_bands_nscf_ph( )
   USE io_global,            ONLY : stdout
   USE io_files,             ONLY : iunhub, iunwfc, nwordwfc, nwordwfcU
   USE buffers,              ONLY : get_buffer, save_buffer, close_buffer, open_buffer
-  USE basis,                ONLY : starting_wfc
+  USE starting_scf,         ONLY : starting_wfc
   USE klist,                ONLY : nkstot, nks, xk, ngk, igk_k
   USE uspp,                 ONLY : vkb, nkb 
   USE gvect,                ONLY : g
@@ -36,8 +36,6 @@ SUBROUTINE c_bands_nscf_ph( )
   USE noncollin_module,     ONLY : noncolin, npol, domag
   USE io_files,             ONLY : tmp_dir, prefix
   USE uspp_init,            ONLY : init_us_2
-  USE wavefunctions_gpum,   ONLY : using_evc, using_evc_d
-  USE wvfct_gpum,           ONLY : using_et
   !
   IMPLICIT NONE
   !
@@ -54,22 +52,19 @@ SUBROUTINE c_bands_nscf_ph( )
   !
   ik_ = 0
   avg_iter = 0.D0
-  call using_et(2) 
   IF ( restart ) CALL restart_in_cbands(ik_, ethr, avg_iter, et )
   !
   ! ... If restarting, calculated wavefunctions have to be read from file
   !
-  CALL using_evc(2) 
   DO ik = 1, ik_
      CALL get_buffer ( evc, nwordwfc, iunwfc, ik )
   END DO
+  !$acc update device(evc)
   !
   IF ( isolve == 0 ) THEN
      WRITE( stdout, '(5X,"Davidson diagonalization with overlap")' )
   ELSE IF ( isolve == 1 ) THEN
      WRITE( stdout, '(5X,"CG style diagonalization")')
-  ELSE IF ( isolve == 2 ) THEN
-     WRITE( stdout, '(5X,"PPCG style diagonalization")')
   ELSE
      CALL errore ( 'c_bands', 'invalid type of diagonalization', isolve)
   END IF
@@ -96,8 +91,10 @@ SUBROUTINE c_bands_nscf_ph( )
      !
      ! ... Needed for LDA+U
      !
-     IF ( nks > 1 .AND. lda_plus_u .AND. (Hubbard_projectors .NE. 'pseudo') ) &
-          CALL get_buffer ( wfcU, nwordwfcU, iunhub, ik )
+     IF ( nks > 1 .AND. lda_plus_u .AND. (Hubbard_projectors.NE.'pseudo') ) THEN
+        CALL get_buffer ( wfcU, nwordwfcU, iunhub, ik )
+        !$acc update device(wfcU)
+     END IF
      !
      ! ... calculate starting  wavefunctions
      !
@@ -105,8 +102,8 @@ SUBROUTINE c_bands_nscf_ph( )
      !
      IF ( TRIM(starting_wfc) == 'file' ) THEN
         !
-        CALL using_evc(2) 
         CALL get_buffer ( evc, nwordwfc, iunwfc, ik )
+        !$acc update device(evc)
         !
      ELSE
         !
@@ -116,27 +113,25 @@ SUBROUTINE c_bands_nscf_ph( )
      !
      ! ... diagonalization of bands for k-point ik
      !
-#if defined(__CUDA)
-     call using_evc_d(0) 
-#endif
      call diag_bands ( 1, ik, avg_iter )
+     !$acc update self(evc)
      !
      !  In the noncolinear magnetic case we have k, k+q, -k -k-q and
      !  to the last two wavefunctions we must apply t_rev.
      !  When lgamma is true we have only k and -k
      !
      IF (noncolin.AND.domag) THEN
-        call using_evc(0) 
         IF (lgamma.AND. MOD(ik,2)==0) THEN
            CALL apply_trev(evc, ik, ik-1)
+           !$acc update device(evc)
         ELSEIF (.NOT.lgamma.AND.(MOD(ik,4)==3.OR.MOD(ik,4)==0)) THEN
            CALL apply_trev(evc, ik, ik-2)
+           !$acc update device(evc)
         ENDIF
      ENDIF
      !
      ! ... save wave-functions (unless disabled in input)
      !
-     call using_evc(0)
      IF ( io_level > -1 ) CALL save_buffer ( evc, nwordwfc, iunwfc, ik )
      !
      ! ... beware: with pools, if the number of k-points on different
@@ -150,7 +145,6 @@ SUBROUTINE c_bands_nscf_ph( )
         ! ... save wavefunctions to file
         !
         IF (check_stop_now()) THEN
-           call using_et(0) 
            CALL save_in_cbands(ik, ethr, avg_iter, et )
            RETURN
         END IF

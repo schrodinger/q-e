@@ -185,7 +185,8 @@ PROGRAM matdyn
   CHARACTER(LEN=256) :: flfrc, flfrq, flvec, fltau, fldos, filename, fldyn, &
                         fleig, fildyn, fildyn_prefix
   CHARACTER(LEN=10)  :: asr
-  LOGICAL :: dos, has_zstar, q_in_cryst_coord, eigen_similarity, loto_disable
+  LOGICAL :: dos, has_zstar, q_in_cryst_coord, eigen_similarity, loto_disable, &
+             remove_interaction_blocks
   COMPLEX(DP), ALLOCATABLE :: dyn(:,:,:,:), dyn_blk(:,:,:,:), frc_ifc(:,:,:,:)
   COMPLEX(DP), ALLOCATABLE :: z(:,:)
   REAL(DP), ALLOCATABLE:: tau(:,:), q(:,:), w2(:,:), freq(:,:), wq(:), &
@@ -199,6 +200,7 @@ PROGRAM matdyn
                   amass_blk(ntypx),          &! original atomic masses
                   atws(3,3),      &! lattice vector for WS initialization
                   rws(0:3,nrwsx)   ! nearest neighbor list, rws(0,*) = norm^2
+  REAL(DP) :: alph ! Ewald coefficient for non-analytical term
   !
   INTEGER :: nat, nat_blk, ntyp, ntyp_blk, &
              l1, l2, l3,                   &! supercell dimensions
@@ -227,7 +229,7 @@ PROGRAM matdyn
   CHARACTER(LEN=6) :: int_to_char
   LOGICAL, ALLOCATABLE :: mask(:)
   INTEGER            :: npk_label, nch
-  CHARACTER(LEN=100), ALLOCATABLE :: letter(:)
+  CHARACTER(LEN=3), ALLOCATABLE :: letter(:)
   INTEGER, ALLOCATABLE :: label_list(:)
   LOGICAL :: tend, terr
   CHARACTER(LEN=256) :: input_line, buffer
@@ -241,7 +243,7 @@ PROGRAM matdyn
        &           la2F, ndos, DeltaE, degauss, q_in_band_form, q_in_cryst_coord, &
        &           eigen_similarity, fldyn, na_ifc, fd, point_label_type, &
        &           nosym, loto_2d, fildyn, fildyn_prefix, el_ph_nsigma, &
-       &           loto_disable, huang, read_lr, write_frc
+       &           loto_disable, huang, read_lr, write_frc, remove_interaction_blocks
   !
   CALL mp_startup()
   CALL environment_start('MATDYN')
@@ -288,6 +290,7 @@ PROGRAM matdyn
      loto_2d=.false.
      el_ph_nsigma=10
      loto_disable = .false.
+     remove_interaction_blocks = .false.
      huang = .true.
      read_lr = .false.
      write_frc = .false.
@@ -330,6 +333,7 @@ PROGRAM matdyn
      CALL mp_bcast(point_label_type,ionode_id, world_comm)
      CALL mp_bcast(loto_2d,ionode_id, world_comm)
      CALL mp_bcast(loto_disable,ionode_id, world_comm)
+     CALL mp_bcast(remove_interaction_blocks, ionode_id, world_comm)
      CALL mp_bcast(el_ph_nsigma,ionode_id, world_comm)
      CALL mp_bcast(huang,ionode_id, world_comm)
      CALL mp_bcast(read_lr,ionode_id, world_comm)
@@ -345,7 +349,8 @@ PROGRAM matdyn
            WRITE(stdout, *)
            WRITE(stdout, '(4x,a)') ' fildyn has been provided, running q2r...'
         END IF
-        CALL do_q2r(fildyn, flfrc, fildyn_prefix, asr, la2F, loto_2d, read_lr)
+        CALL do_q2r(fildyn, flfrc, fildyn_prefix, asr, la2F, loto_2d, read_lr, &
+                    remove_interaction_blocks)
      END IF
      !
      ntyp_blk = ntypx ! avoids fake out-of-bound error
@@ -367,14 +372,14 @@ PROGRAM matdyn
         ALLOCATE(frc_lr(nr1,nr2,nr3,3,3,nat_blk,nat_blk))
         frc_lr = 0.d0
         if (read_lr) THEN
-           CALL read_ifc(nr1,nr2,nr3,nat_blk,frc,frc_lr)
+           CALL read_ifc(alph,nr1,nr2,nr3,nat_blk,frc,frc_lr)
         else
-           CALL read_ifc(nr1,nr2,nr3,nat_blk,frc)
+           CALL read_ifc(alph,nr1,nr2,nr3,nat_blk,frc)
         end if
      ELSE
         CALL readfc ( flfrc, nr1, nr2, nr3, epsil, nat_blk, &
             ibrav, alat, at_blk, ntyp_blk, &
-            amass_blk, omega_blk, has_zstar, read_lr)
+            amass_blk, omega_blk, has_zstar, alph, read_lr)
      ENDIF
      !
      CALL recips ( at_blk(1,1),at_blk(1,2),at_blk(1,3),  &
@@ -469,10 +474,10 @@ PROGRAM matdyn
         CALL mp_bcast(nq, ionode_id, world_comm)
         ALLOCATE ( q(3,nq) )
         IF (.NOT.q_in_band_form) THEN
-           ALLOCATE(letter(nq))
            ALLOCATE(wq(nq))
+           wq(:) = 0.0_dp
            DO n = 1,nq
-              IF (ionode) READ (5,*) (q(i,n),i=1,3), letter(n)
+              IF (ionode) READ (5,*) (q(i,n),i=1,3)
            END DO
            CALL mp_bcast(q, ionode_id, world_comm)
            !
@@ -552,6 +557,14 @@ PROGRAM matdyn
         ! 
      END IF
      !
+     IF (asr == 'all' .AND. ANY(ABS(zeu) > 1.d-5) .AND. (.NOT. read_lr)) THEN
+        WRITE(stdout, '(/5x, a )') "WARNING: To use asr = 'all' for infrared-active solids, i.e., solids with nonzero"
+        WRITE(stdout, '( 5x, a )') "Born effective charge, one must set read_lr = .true. in the matdyn.x input. Also,"
+        WRITE(stdout, '( 5x, a )') "the flfrc file must have been constructed with write_lr = .true. in the q2r.x input."
+        WRITE(stdout, '( 5x, a )') "If the system is infrared inactive and you have nonzero Born effective charge due to"
+        WRITE(stdout, '( 5x, a/)') "numerical noise, you can ignore this warning."
+     ENDIF
+     !
      IF (asr /= 'no') THEN
         CALL set_asr (asr, nr1, nr2, nr3, frc, frc_lr, zeu, &
              nat_blk, ibrav, tau_blk, at_blk, huang)
@@ -559,7 +572,7 @@ PROGRAM matdyn
      !
      IF (write_frc) THEN
         CALL writefc(flfrc, xmlifc, has_zstar, nr1, nr2, nr3, ibrav, alat, at_blk, bg_blk, &
-                     ntyp_blk, nat_blk, amass_blk, omega_blk, epsil, nspin_mag, nqs)
+                     ntyp_blk, nat_blk, amass_blk, omega_blk, epsil, alph, nspin_mag, nqs)
      END IF
      !
      IF (flvec.EQ.' ') THEN
@@ -617,8 +630,8 @@ PROGRAM matdyn
 
         CALL setupmat (q(1,n), dyn, nat, at, bg, tau, itau_blk, nsc, alat, &
              dyn_blk, nat_blk, at_blk, bg_blk, tau_blk, omega_blk,  &
-                   loto_2d, &
-             epsil, zeu, frc, nr1,nr2,nr3, has_zstar, rws, nrws, na_ifc,f_of_q,fd)
+             loto_2d, epsil, zeu, alph, &
+             frc, nr1,nr2,nr3, has_zstar, rws, nrws, na_ifc,f_of_q,fd)
         IF (.not.loto_2d) THEN 
         qhat(1) = q(1,n)*at(1,1)+q(2,n)*at(2,1)+q(3,n)*at(3,1)
         qhat(2) = q(1,n)*at(1,2)+q(2,n)*at(2,2)+q(3,n)*at(3,2)
@@ -766,19 +779,16 @@ PROGRAM matdyn
            WRITE(2,'(6f10.4)') (freq(i,n), i=1,3*nat)
         END DO
         CLOSE(unit=2)
-        !
-        IF(.NOT.dos) THEN
-           OPEN (unit=2,file=trim(flfrq)//'.gp' ,status='unknown',form='formatted')
-           pathL = 0._dp
-           WRITE(2, '(f10.6,3x,a,3x,999f10.4)')  pathL, letter(1), (freq(i,1), i=1,3*nat)
-           DO n=2, nq
-               pathL=pathL+(SQRT(SUM(  (q(:,n)-q(:,n-1))**2 )))
-               WRITE(2, '(f10.6,3x,a,3x,999f10.4)')  pathL, letter(n), (freq(i,n), i=1,3*nat)
-           END DO
-           CLOSE(unit=2)
-           DEALLOCATE(letter)
-        END IF
-        !
+
+        OPEN (unit=2,file=trim(flfrq)//'.gp' ,status='unknown',form='formatted')
+        pathL = 0._dp
+        WRITE(2, '(f10.6,3x,999f10.4)')  pathL,  (freq(i,1), i=1,3*nat)
+        DO n=2, nq
+           pathL=pathL+(SQRT(SUM(  (q(:,n)-q(:,n-1))**2 )))
+           WRITE(2, '(f10.6,3x,999f10.4)')  pathL,  (freq(i,n), i=1,3*nat)
+        END DO
+        CLOSE(unit=2)
+
      END IF
      !
      !  If the force constants are in the xml format we write also
@@ -894,7 +904,8 @@ END PROGRAM matdyn
 !
 !-----------------------------------------------------------------------
 SUBROUTINE readfc ( flfrc, nr1, nr2, nr3, epsil, nat,    &
-                    ibrav, alat, at, ntyp, amass, omega, has_zstar, read_lr )
+     ibrav, alat, at, ntyp, amass, omega, &
+     has_zstar, alph, read_lr )
   !-----------------------------------------------------------------------
   !
   USE kinds,      ONLY : DP
@@ -908,12 +919,13 @@ SUBROUTINE readfc ( flfrc, nr1, nr2, nr3, epsil, nat,    &
   IMPLICIT NONE
   ! I/O variable
   CHARACTER(LEN=256) :: flfrc
+  CHARACTER(LEN=80)  :: line
   INTEGER :: ibrav, nr1,nr2,nr3,nat, ntyp
-  REAL(DP) :: alat, at(3,3), epsil(3,3)
+  REAL(DP) :: alat, at(3,3), epsil(3,3), alph
   LOGICAL :: has_zstar, read_lr
   ! local variables
   INTEGER :: i, j, na, nb, m1,m2,m3
-  INTEGER :: ibid, jbid, nabid, nbbid, m1bid,m2bid,m3bid
+  INTEGER :: ios, ibid, jbid, nabid, nbbid, m1bid,m2bid,m3bid
   REAL(DP) :: amass(ntyp), amass_from_file, omega
   INTEGER :: nt
   !
@@ -968,11 +980,18 @@ SUBROUTINE readfc ( flfrc, nr1, nr2, nr3, epsil, nat,    &
   CALL mp_bcast(ityp,ionode_id, world_comm)
   CALL mp_bcast(tau,ionode_id, world_comm)
   !
-  !  read macroscopic variable
+  !  read macroscopic variables
   !
-  IF (ionode) READ (1,*) has_zstar
+  alph = 1.0_dp
+  IF (ionode) THEN
+     READ (1,'(a)') line
+     READ(line,*,iostat=ios) has_zstar, alph
+     IF ( ios /= 0 ) READ(line,*) has_zstar
+  ENDIF
+  !
   CALL mp_bcast(has_zstar,ionode_id, world_comm)
   IF (has_zstar) THEN
+     CALL mp_bcast(alph,ionode_id, world_comm)
      IF (ionode) READ(1,*) ((epsil(i,j),j=1,3),i=1,3)
      CALL mp_bcast(epsil,ionode_id, world_comm)
      IF (ionode) THEN
@@ -1034,7 +1053,7 @@ END SUBROUTINE readfc
 !
 !-----------------------------------------------------------------------
 SUBROUTINE writefc(flfrc, xmlifc, has_zstar, nr1, nr2, nr3, ibrav, alat, &
-                   at, bg, ntyp, nat, amass, omega, epsil, nspin_mag, nqs)
+                   at, bg, ntyp, nat, amass, omega, epsil, alph, nspin_mag, nqs)
   !---------------------------------------------------------------------
   !
    USE kinds,      ONLY : DP
@@ -1050,6 +1069,7 @@ SUBROUTINE writefc(flfrc, xmlifc, has_zstar, nr1, nr2, nr3, ibrav, alat, &
    CHARACTER(LEN=256) :: flfrc
    INTEGER :: nr1, nr2, nr3, ibrav, nat, ntyp, nspin_mag, nqs
    REAL(DP) :: alat, omega, at(3,3), bg(3,3), amass(ntyp), epsil(3,3)
+   REAL(DP) :: alph
    LOGICAL :: xmlifc, has_zstar
    ! local variables
    INTEGER :: i, j, nt, na, nb, nn, m1, m2, m3, leng
@@ -1067,7 +1087,7 @@ SUBROUTINE writefc(flfrc, xmlifc, has_zstar, nr1, nr2, nr3, ibrav, alat, &
          CALL write_dyn_mat_header(flfrc2, ntyp, nat, ibrav, nspin_mag, &
               celldm, at, bg, omega, atm, amass, tau, ityp, m_loc, nqs)
       ENDIF
-      CALL write_ifc(nr1, nr2, nr3, nat, frc2)
+      CALL write_ifc(alph,nr1, nr2, nr3, nat, frc2)
    ELSE IF (ionode) THEN
       OPEN(unit=1, file=flfrc2, status='unknown', form='formatted')
       WRITE(1,'(i3,i5,i4,6f11.7)') ntyp, nat, ibrav, celldm
@@ -1078,7 +1098,7 @@ SUBROUTINE writefc(flfrc, xmlifc, has_zstar, nr1, nr2, nr3, ibrav, alat, &
       DO na = 1, nat
          WRITE(1,'(2i5,3f18.10)') na, ityp(na), (tau(j,na),j=1,3)
       END DO
-      WRITE (1,*) has_zstar
+      WRITE (1,*) has_zstar, alph
       IF (has_zstar) THEN
          WRITE(1,'(3f24.12)') ((epsil(i,j),j=1,3),i=1,3)
          DO na = 1, nat
@@ -1214,8 +1234,8 @@ END SUBROUTINE frc_blk
 !-----------------------------------------------------------------------
 SUBROUTINE setupmat (q,dyn,nat,at,bg,tau,itau_blk,nsc,alat, &
      &         dyn_blk,nat_blk,at_blk,bg_blk,tau_blk,omega_blk, &
-     &         loto_2d, & 
-     &         epsil,zeu,frc,nr1,nr2,nr3,has_zstar,rws,nrws,na_ifc,f_of_q,fd)
+     &         loto_2d, epsil, zeu, alph, &
+     &         frc,nr1,nr2,nr3,has_zstar,rws,nrws,na_ifc,f_of_q,fd)
   !-----------------------------------------------------------------------
   ! compute the dynamical matrix (the analytic part only)
   !
@@ -1229,7 +1249,7 @@ SUBROUTINE setupmat (q,dyn,nat,at,bg,tau,itau_blk,nsc,alat, &
   ! I/O variables
   !
   INTEGER:: nr1, nr2, nr3, nat, nat_blk, nsc, nrws, itau_blk(nat)
-  REAL(DP) :: q(3), tau(3,nat), at(3,3), bg(3,3), alat,      &
+  REAL(DP) :: q(3), tau(3,nat), at(3,3), bg(3,3), alat, alph,    &
                   epsil(3,3), zeu(3,3,nat_blk), rws(0:3,nrws),   &
                   frc(nr1,nr2,nr3,3,3,nat_blk,nat_blk)
   REAL(DP) :: tau_blk(3,nat_blk), at_blk(3,3), bg_blk(3,3), omega_blk
@@ -1256,11 +1276,10 @@ SUBROUTINE setupmat (q,dyn,nat,at,bg,tau,itau_blk,nsc,alat, &
      dyn_blk(:,:,:,:) = (0.d0,0.d0)
      CALL frc_blk (dyn_blk,qp,tau_blk,nat_blk,              &
           &              nr1,nr2,nr3,frc,at_blk,bg_blk,rws,nrws,f_of_q,fd)
-      IF (has_zstar .and. .not.na_ifc) &
-           CALL rgd_blk(nr1,nr2,nr3,nat_blk,dyn_blk,qp,tau_blk,   &
-                         epsil,zeu,bg_blk,omega_blk,celldm(1), loto_2d,+1.d0)
-           ! LOTO 2D added celldm(1)=alat to passed arguments
-     !
+     IF (has_zstar .and. .not.na_ifc) &
+          CALL rgd_blk(nr1, nr2, nr3, nat_blk, dyn_blk, qp, tau_blk,   &
+          epsil, zeu, alph, bg_blk, omega_blk, celldm(1), loto_2d, +1.d0 )
+      !
      DO na=1,nat
         na_blk = itau_blk(na)
         DO nb=1,nat

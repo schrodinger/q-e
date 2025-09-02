@@ -1,5 +1,5 @@
 !
-! Copyright (C) 2004-2015 Quantum ESPRESSO group
+! Copyright (C) 2004-2024 Quantum ESPRESSO Foundation
 ! This file is distributed under the terms of the
 ! GNU General Public License. See the file `License'
 ! in the root directory of the present distribution,
@@ -1642,6 +1642,10 @@ MODULE realus
     !
     REAL(DP), EXTERNAL :: ddot
     !
+    !-------------------TEMPORARY-----------
+    INTEGER :: ngk1
+    LOGICAL :: is_present, acc_is_present
+    !---------------------------------------    
     !
     CALL start_clock( 'calbec_rs' )
     !
@@ -1653,9 +1657,18 @@ MODULE realus
     !
     becp_r(:,ibnd)=0.d0
     IF ( ibnd+1 <= last ) becp_r(:,ibnd+1)=0.d0
+    !
     ! Clearly for an odd number of bands for ibnd=nbnd=last you don't have
     ! anymore bands, and so the imaginary part equal zero
     !
+!-------------TEMPORARY---------------------
+    ngk1 = SIZE(psic)
+#if defined(_OPENACC)
+    is_present = acc_is_present(psic,ngk1)
+    !$acc update self(psic) if (is_present)
+#endif
+!-------------------------------------------    
+!
 !
 ! copy psic into a box-friendly array (and scatter it across intra_bbox_comm if needed)
 !
@@ -1677,7 +1690,7 @@ MODULE realus
              !
              mbia = maxbox_beta(ia) ; IF ( mbia == 0 ) CYCLE
              !
-             ijkb0 = ofsbeta(ia)
+             ijkb0 = ofsbeta(ia)             
              !$omp parallel default(shared) private(ih,ikb,ir,bcr,bci)
              !$omp do 
              DO ir =1, mbia
@@ -1703,7 +1716,7 @@ MODULE realus
                 DO ih = 1, nh_nt
                    !
                    ikb = ijkb0 + ih
-                   bci = ddot( mbia, betasave(box_s(ia):box_e(ia),ih), 1, wi(:) , 1 )
+                   bci = ddot( mbia, betasave(box_s(ia): box_e(ia),ih), 1, wi(:) , 1 )
                    becp_r(ikb,ibnd+1) = fac * bci
                    !
                 ENDDO
@@ -2197,18 +2210,14 @@ MODULE realus
     !
     INTEGER :: ebnd
     !
-    !-------------------TEMPORARY-----------
-    INTEGER :: ngk1
-    LOGICAL :: is_present, acc_is_present
-    !---------------------------------------
-    !
-    !Task groups
-    !
-    !The new task group version based on vloc_psi
     !print *, "->Real space"
+    !
     CALL start_clock( 'invfft_orbital' )
     !
+    !$acc data present_or_copyin(orbital) present_or_copyout(psic)
     IF( dffts%has_task_groups ) THEN
+        !
+        ! Task groups - based on vloc_psi
         !
         CALL tgwave_g2r( orbital(1:ngk(1),ibnd:last), tg_psic, dffts, ngk(1) )
         !
@@ -2219,29 +2228,25 @@ MODULE realus
           ENDIF
         ENDIF
         !
-    ELSE !Task groups not used
+     ELSE
+        !
+        ! No Task groups
         !
         ebnd = ibnd
         IF ( ibnd < last ) ebnd = ebnd + 1
         !
         CALL wave_g2r( orbital(1:ngk(1),ibnd:ebnd), psic, dffts )
         !
-!-------------TEMPORARY---------------------
-        ngk1 = SIZE(psic)
-#if defined(_OPENACC)
-        is_present = acc_is_present(psic,ngk1)
-        !$acc update self(psic) if (is_present)
-#endif
-!-------------------------------------------
-        !
         IF (PRESENT(conserved)) THEN
           IF (conserved) THEN
+             call errore('invfft_orbital_gamma','unverified case',1)
             IF (.NOT. ALLOCATED(psic_temp) ) ALLOCATE( psic_temp(SIZE(psic)) )
             CALL zcopy( SIZE(psic), psic, 1, psic_temp, 1 )
           ENDIF
         ENDIF
         !
     ENDIF
+    !$acc end data
     !
     CALL stop_clock( 'invfft_orbital' )
     !
@@ -2289,14 +2294,11 @@ MODULE realus
     LOGICAL :: add_to_orbital_
     COMPLEX(DP), ALLOCATABLE :: psio(:,:)
     !
-!-------------------TEMPORARY-----------
-    INTEGER :: ngk1
-    LOGICAL :: is_present, acc_is_present
-!---------------------------------------
-    !
     ! ... Task groups
     !print *, "->Fourier space"
     CALL start_clock( 'fwfft_orbital' )
+    !
+    !$acc data present_or_copyin(psic) present_or_copy(orbital)
     !
     add_to_orbital_=.FALSE. ; IF( PRESENT(add_to_orbital)) add_to_orbital_ = add_to_orbital
     !
@@ -2305,6 +2307,7 @@ MODULE realus
         !
         incr = 2*fftx_ntgrp(dffts)
         ALLOCATE( psio(ngk(1),incr) )
+        !$acc enter data create(psio)
         !
         brange = last-ibnd+1
         !
@@ -2332,6 +2335,7 @@ MODULE realus
            ENDIF
         ENDDO
         !
+        !$acc exit data delete(psio)
         DEALLOCATE( psio )
         !
         IF (PRESENT(conserved)) THEN
@@ -2348,36 +2352,36 @@ MODULE realus
         brange = ebnd-ibnd+1
         !
         ALLOCATE( psio(ngk(1),brange) )
+        !$acc enter data create(psio)
         !
         CALL wave_r2g( psic(1:dffts%nnr), psio, dffts )
-        !
-!-------------TEMPORARY---------------------
-        ngk1 = SIZE(psic)
-#if defined(_OPENACC)
-        is_present = acc_is_present(psic,ngk1)
-        !$acc update self(psic) if (is_present)
-#endif
-!-------------------------------------------
         !
         fac = 1.d0
         IF ( ibnd<last ) fac = 0.5d0
         !
         IF ( add_to_orbital_ ) THEN
+#if defined(_OPENACC)                
+           !$acc parallel loop
+#else
            !$omp parallel do
+#endif
            DO j = 1, ngk(1)
               orbital(j,ibnd) = orbital(j,ibnd) + fac*psio(j,1)
               IF (ibnd<last) orbital(j,ibnd+1) = orbital(j,ibnd+1) + fac*psio(j,2)
            ENDDO
-           !$omp end parallel do
         ELSE
+#if defined(_OPENACC)                
+           !$acc parallel loop
+#else
            !$omp parallel do
+#endif                
            DO j = 1, ngk(1)
               orbital(j,ibnd) = fac*psio(j,1)
               IF (ibnd<last) orbital(j,ibnd+1) = fac*psio(j,2)
            ENDDO
-           !$omp end parallel do
         ENDIF
         !
+        !$acc exit data delete(psio)
         DEALLOCATE( psio )
         !
         IF (PRESENT(conserved)) THEN
@@ -2387,6 +2391,8 @@ MODULE realus
         ENDIF
         !
     ENDIF
+    !
+    !$acc end data
     !
     CALL stop_clock( 'fwfft_orbital' )
     !
@@ -2425,13 +2431,10 @@ MODULE realus
     !! if this flag is true, the orbital is stored in temporary memory
     !
     INTEGER :: ik_
-!-------------------TEMPORARY-----------
-    INTEGER :: ngk1
-    LOGICAL :: is_present, acc_is_present
-!---------------------------------------    
     !
     CALL start_clock( 'invfft_orbital' )
     !
+    !$acc data present_or_copyin(orbital) present_or_copyout(psic)
     ! ... current_k  variable  must contain the index of the desired kpoint
     ik_ = current_k ; IF (PRESENT(ik)) ik_ = ik
     !
@@ -2450,22 +2453,16 @@ MODULE realus
        !
        CALL wave_g2r( orbital(:,ibnd:ibnd), psic, dffts, igk=igk_k(:,ik_) )
        !
-!-------------TEMPORARY---------------------
-       ngk1 = SIZE(psic)
-#if defined(_OPENACC)
-       is_present = acc_is_present(psic,ngk1)
-       !$acc update self(psic) if (is_present)
-#endif
-!-------------------------------------------       
-       !
        IF (PRESENT(conserved)) THEN
           IF (conserved) THEN
+             call errore('invfft_orbital_k','unverified case',1)
              IF (.NOT. ALLOCATED(psic_temp) ) ALLOCATE( psic_temp(SIZE(psic)) )
              psic_temp = psic
           ENDIF
        ENDIF
        !
     ENDIF
+    !$acc end data
     !
     CALL stop_clock( 'invfft_orbital' )
     !
@@ -2513,12 +2510,10 @@ MODULE realus
     INTEGER :: idx, ik_ , incr, ig, brange
     LOGICAL :: add_to_orbital_
     COMPLEX(DP), ALLOCATABLE :: psio(:,:)
-!-------------------TEMPORARY-----------
-    INTEGER :: ngk1
-    LOGICAL :: is_present, acc_is_present
-!---------------------------------------    
     !
     CALL start_clock( 'fwfft_orbital' )
+    !
+    !$acc data present_or_copyin(psic) present_or_copy(orbital)
     !
     add_to_orbital_=.FALSE. ; IF( PRESENT(add_to_orbital)) add_to_orbital_ = add_to_orbital
     !
@@ -2531,6 +2526,7 @@ MODULE realus
        incr = fftx_ntgrp(dffts)
        !
        ALLOCATE( psio(ngk(ik_),incr) )
+       !$acc enter data create(psio)
        !
        brange = last-ibnd+1
        !
@@ -2548,6 +2544,7 @@ MODULE realus
           !
        ENDDO
        !
+       !$acc exit data delete(psio)
        DEALLOCATE( psio )
        !
        IF (PRESENT(conserved)) THEN
@@ -2559,31 +2556,23 @@ MODULE realus
     ELSE !non task groups version
        !
        ALLOCATE( psio(ngk(ik_),1) )
+       !$acc enter data create(psio)
        !
        CALL wave_r2g( psic(1:dffts%nnr), psio, dffts, igk=igk_k(:,ik_) )
        !
-       !-------------TEMPORARY---------------------
-       ngk1 = SIZE(psic)
-#if defined(_OPENACC)
-       is_present = acc_is_present(psic,ngk1)
-       !$acc update self(psic) if (is_present)
-#endif
-!-------------------------------------------   
-       !
        IF( add_to_orbital_ ) THEN
-          !$omp parallel do default(shared) private(ig)
+          !$acc parallel loop
           DO ig = 1, ngk(ik_)
              orbital(ig,ibnd) = orbital(ig,ibnd) + psio(ig,1)
           ENDDO
-          !$omp end parallel do
        ELSE
-          !$omp parallel do default(shared) private(ig)
+          !$acc parallel loop
           DO ig = 1, ngk(ik_)
              orbital(ig,ibnd) = psio(ig,1)
           ENDDO
-          !$omp end parallel do
        ENDIF
        !
+       !$acc exit data delete(psio)
        DEALLOCATE( psio )
        !
        IF ( PRESENT(conserved) ) THEN
@@ -2592,6 +2581,8 @@ MODULE realus
           ENDIF
        ENDIF
     ENDIF
+    !
+    !$acc end data
     !
     CALL stop_clock( 'fwfft_orbital' )
     !
@@ -2611,7 +2602,6 @@ MODULE realus
     USE fft_base,      ONLY : dffts
     USE scf,           ONLY : vrs
     USE lsda_mod,      ONLY : current_spin
-    USE scf_gpum,      ONLY : using_vrs
     !
     IMPLICIT NONE
     !
@@ -2626,8 +2616,6 @@ MODULE realus
     REAL(DP), ALLOCATABLE :: tg_v(:)
     !
     CALL start_clock( 'v_loc_psir' )
-
-    CALL using_vrs(0) ! tg_gather (intent: in)
 
     IF( dffts%has_task_groups ) THEN
         IF (ibnd == 1 ) THEN
@@ -2670,7 +2658,6 @@ MODULE realus
     USE fft_base,      ONLY : dffts
     USE scf,           ONLY : vrs
     USE lsda_mod,      ONLY : current_spin
-    USE scf_gpum,      ONLY : using_vrs
     !
     IMPLICIT NONE
     !
@@ -2685,8 +2672,6 @@ MODULE realus
     REAL(DP), ALLOCATABLE :: tg_v(:)
     !
     CALL start_clock( 'v_loc_psir' )
-
-    CALL using_vrs(0) ! tg_gather (intent: in)
 
     IF( dffts%has_task_groups ) THEN
         IF (ibnd == 1 ) THEN

@@ -140,7 +140,7 @@ END FUNCTION MYDDOT
 ! this is analogus to MYDDOT, but the result is on device
 DOUBLE PRECISION FUNCTION MYDDOT_VECTOR_GPU(N,DX,DY)
 #if defined(__CUDA)
-!$acc routine(MYDDOT_VECTOR_GPU) vector
+!$acc routine( MYDDOT_VECTOR_GPU ) vector
 #endif
     INTEGER, INTENT(IN) :: N
     DOUBLE PRECISION, INTENT(IN) :: DX(*),DY(*)
@@ -222,3 +222,268 @@ USE cublas
   return
 end subroutine MYDDOTv3
 
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+subroutine MYDTRSM(side, uplo, transa, diag, m, n, alpha, a, lda, b, ldb) 
+#if defined(__CUDA)
+USE cublas
+#endif
+implicit none
+  character*1 :: side, uplo, transa, diag 
+  integer :: m, n, lda, ldb 
+  DOUBLE PRECISION :: alpha 
+  DOUBLE PRECISION, dimension(lda, *) :: a 
+  DOUBLE PRECISION, dimension(ldb, *) :: b 
+#if defined(__CUDA)
+  attributes(device) :: a, b 
+  call cublasDTRSM(side, uplo, transa, diag, m, n, alpha, a, lda, b, ldb)  
+#else
+  call DTRSM(side, uplo, transa, diag, m, n, alpha, a, lda, b, ldb)  
+#endif
+  return
+end subroutine MYDTRSM
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+DOUBLE COMPLEX function MYZDOTC(n, zx, incx, zy, incy) 
+#if defined(__CUDA)
+USE cublas
+#endif
+implicit none
+  integer :: n, incx, incy 
+  DOUBLE COMPLEX, dimension(*) :: zx, zy
+#if defined(__CUDA)
+  attributes(device) :: zx, zy 
+  MYZDOTC = cublasZDOTC(n, zx, incx, zy, incy)  
+#else
+  DOUBLE COMPLEX, EXTERNAL :: ZDOTC
+  MYZDOTC = ZDOTC(n, zx, incx, zy, incy)  
+#endif
+  return
+end function MYZDOTC
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+DOUBLE COMPLEX function MYZDOTC_VECTOR_GPU(n, zx, zy) 
+#if defined(__CUDA)
+!$acc routine(MYZDOTC_VECTOR_GPU) vector
+#endif
+implicit none
+  integer :: n
+  DOUBLE COMPLEX, dimension(*) :: zx, zy
+#if defined(__CUDA)
+  attributes(device) :: zx, zy 
+  !civn: from here lapack source code. code for unequal increments 
+  !      or equal increments not equal to 1 NOT implemented
+  COMPLEX*16 ztemp
+  INTEGER i
+  INTRINSIC dconjg
+  ztemp = (0.0d0,0.0d0)
+  MYZDOTC_VECTOR_GPU = (0.0d0,0.0d0)
+  IF (n.LE.0) RETURN
+  !$acc loop vector reduction(+:ztemp) 
+  DO i = 1,n
+     ztemp = ztemp + dconjg(zx(i))*zy(i)
+  END DO
+  MYZDOTC_VECTOR_GPU = ztemp
+#else
+  DOUBLE COMPLEX, EXTERNAL :: ZDOTC
+  MYZDOTC_VECTOR_GPU = ZDOTC(n, zx, 1, zy, 1)  
+#endif
+  return
+end function MYZDOTC_VECTOR_GPU 
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+SUBROUTINE MYZSWAP(n, zx, incx, zy, incy) 
+#if defined(__CUDA)
+USE cublas
+#endif
+implicit none
+  integer :: n, incx, incy 
+  DOUBLE COMPLEX, dimension(*) :: zx, zy
+#if defined(__CUDA)
+  attributes(device) :: zx, zy 
+  CALL cublasZSWAP(n, zx, incx, zy, incy)  
+#else
+  CALL ZSWAP(n, zx, incx, zy, incy)  
+#endif
+  return
+END SUBROUTINE MYZSWAP
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+SUBROUTINE MYZSWAP_VECTOR_GPU(n, zx, zy) 
+#if defined(__CUDA)
+!$acc routine(MYZSWAP_VECTOR_GPU) vector
+#endif
+implicit none
+  integer :: n
+  DOUBLE COMPLEX, dimension(*) :: zx, zy
+#if defined(__CUDA)
+  attributes(device) :: zx, zy 
+  complex*16 ztemp
+  integer i
+  IF (n.LE.0) RETURN
+  !$acc loop vector private(ztemp)
+  DO i = 1,n
+     ztemp = zx(i)
+     zx(i) = zy(i)
+     zy(i) = ztemp
+  END DO 
+#else
+  CALL ZSWAP(n, zx, 1, zy, 1)  
+#endif
+  return
+END SUBROUTINE MYZSWAP_VECTOR_GPU
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+SUBROUTINE MYZCOPY(n, zx, incx, zy, incy)
+#if defined(__CUDA)
+USE cublas
+#endif
+IMPLICIT NONE 
+  INTEGER :: n, incx, incy
+  DOUBLE COMPLEX, dimension(*) :: zx, zy
+#if defined(__CUDA)
+  attributes(device) :: zx, zy 
+  CALL cublasZCOPY(n, zx, incx, zy, incy)  
+#else
+  CALL ZCOPY(n, zx, incx, zy, incy)  
+#endif
+  RETURN
+END SUBROUTINE MYZCOPY
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+SUBROUTINE MYZAXPY(n, za, zx, incx, zy, incy)
+#if defined(__CUDA)
+USE cublas
+#endif
+IMPLICIT NONE 
+  INTEGER :: n, incx, incy
+  DOUBLE COMPLEX :: za  
+  DOUBLE COMPLEX, dimension(*) :: zx, zy
+#if defined(__CUDA)
+  attributes(device) :: zx, zy 
+  CALL cublasZAXPY(n, za, zx, incx, zy, incy)  
+#else
+  CALL ZAXPY(n, za, zx, incx, zy, incy)  
+#endif
+  RETURN
+END SUBROUTINE MYZAXPY
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+SUBROUTINE MYZDSCAL(n, da, zx, incx)
+#if defined(__CUDA)
+USE cublas
+#endif
+IMPLICIT NONE 
+  INTEGER :: n, incx
+  DOUBLE PRECISION :: da
+  DOUBLE COMPLEX, dimension(*) :: zx
+#if defined(__CUDA)
+  attributes(device) :: zx
+  CALL cublasZDSCAL(n, da, zx, incx)
+#else
+  CALL ZDSCAL(n, da, zx, incx)
+#endif
+  RETURN
+END SUBROUTINE MYZDSCAL
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+SUBROUTINE MYZSCAL(n, za, zx, incx)
+#if defined(__CUDA)
+USE cublas
+#endif
+IMPLICIT NONE 
+  INTEGER :: n, incx
+  DOUBLE COMPLEX :: za
+  DOUBLE COMPLEX, dimension(*) :: zx
+#if defined(__CUDA)
+  attributes(device) :: zx
+  CALL cublasZSCAL(n, za, zx, incx)
+#else
+  CALL ZSCAL(n, za, zx, incx)
+#endif
+  RETURN
+END SUBROUTINE MYZSCAL
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+SUBROUTINE MYDCOPY(n, x, incx, y, incy)
+#if defined(__CUDA)
+USE cublas
+#endif
+IMPLICIT NONE
+  INTEGER :: n, incx, incy
+  DOUBLE PRECISION, INTENT(IN)   :: x(*)
+  DOUBLE PRECISION, INTENT(OUT)  :: y(*)
+#if defined(__CUDA)
+  attributes(device) :: x, y
+  call cublasDCOPY(n, x, incx, y, incy)
+#else
+  call DCOPY(n, x, incx, y, incy)
+#endif
+  RETURN
+END SUBROUTINE MYDCOPY
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+SUBROUTINE MYDAXPY(n, a, x, incx, y, incy)
+#if defined(__CUDA)
+USE cublas
+#endif
+IMPLICIT NONE
+  INTEGER :: n, incx, incy
+  DOUBLE PRECISION, INTENT(IN)  :: a
+  DOUBLE PRECISION, INTENT(IN)  :: x(*) 
+  DOUBLE PRECISION, INTENT(OUT) :: y(*) 
+#if defined(__CUDA)
+  attributes(device) :: x, y
+  call cublasDAXPY( n, a, x, incx, y, incy)
+#else
+  call DAXPY( n, a, x, incx, y, incy)
+#endif
+  RETURN
+END SUBROUTINE MYDAXPY
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+SUBROUTINE MYDSCAL(n, a, x, incx)
+#if defined(__CUDA)
+USE cublas
+#endif
+IMPLICIT NONE
+  integer :: n, incx
+  DOUBLE PRECISION :: a
+  DOUBLE PRECISION, dimension(*)  :: x
+#if defined(__CUDA)
+  attributes(device) :: x
+  call cublasDSCAL(n, a, x, incx)
+#else
+  call DSCAL(n, a, x, incx)
+#endif
+  RETURN
+END SUBROUTINE MYDSCAL
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+SUBROUTINE MYDSWAP(n, dx, incx, dy, incy) 
+#if defined(__CUDA)
+USE cublas
+#endif
+implicit none
+  integer :: n, incx, incy 
+  REAL(8), dimension(*) :: dx, dy
+#if defined(__CUDA)
+  attributes(device) :: dx, dy 
+  CALL cublasDSWAP(n, dx, incx, dy, incy)  
+#else
+  CALL DSWAP(n, dx, incx, dy, incy)  
+#endif
+  return
+END SUBROUTINE MYDSWAP
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+SUBROUTINE MYDSWAP_VECTOR_GPU(n, dx, dy) 
+#if defined(__CUDA)
+!$acc routine(MYDSWAP_VECTOR_GPU) vector
+#endif
+implicit none
+  integer :: n
+  DOUBLE PRECISION, dimension(*) :: dx, dy
+#if defined(__CUDA)
+  attributes(device) :: dx, dy 
+  double precision dtemp
+  integer i
+  IF (n.LE.0) RETURN
+  !$acc loop vector private(dtemp)
+  DO i = 1,n
+     dtemp = dx(i)
+     dx(i) = dy(i)
+     dy(i) = dtemp
+  END DO 
+#else
+  CALL DSWAP(n, dx, 1, dy, 1)  
+#endif
+  return
+END SUBROUTINE MYDSWAP_VECTOR_GPU
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!

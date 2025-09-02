@@ -37,13 +37,12 @@ SUBROUTINE punch( what )
   USE pw_restart_new,       ONLY : pw_write_schema, write_collected_wfc
   USE qexsd_module,         ONLY : qexsd_reset_steps
   USE io_rho_xml,           ONLY : write_scf
+  USE xc_lib,               ONLY : xclib_dft_is
   USE a2F,                  ONLY : la2F, a2Fsave
   USE wavefunctions,        ONLY : evc
   USE xdm_module,           ONLY : write_xdmdat
   USE rism3d_facade,        ONLY : lrism3d, rism3d_write_to_restart
   USE solvmol,              ONLY : nsolV
-  !
-  USE wavefunctions_gpum,   ONLY : using_evc
   !
   IMPLICIT NONE
   !
@@ -91,7 +90,9 @@ SUBROUTINE punch( what )
      IF ( lscf .OR. lforcet ) THEN
         CALL write_scf( rho, nspin )
         WRITE( stdout, '(", charge density")', ADVANCE ='NO' )
-     END IF
+        IF ( xclib_dft_is('meta') ) &
+           WRITE( stdout, '(" with meta-GGA kinetic term")', ADVANCE ='NO' )
+     END IF 
      !
      ! ... correlation functions of 3D-RISM.
      ! ... do not overwrite them, in case of non-scf
@@ -163,7 +164,6 @@ SUBROUTINE punch( what )
      ! ... (if disk_io='low' no file is open, must be opened and closed here)
      !
      IF (io_level < 1) CALL diropn( iunwfc, 'wfc', 2*nwordwfc, exst )
-     CALL using_evc(0)
      CALL davcio ( evc, 2*nwordwfc, iunwfc, nks, 1 )
      IF (io_level < 1) CLOSE ( UNIT=iunwfc, STATUS='keep' )
      WRITE( stdout, '(" distributed wavefunctions")', ADVANCE ='NO' )

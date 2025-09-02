@@ -6,12 +6,14 @@
 ! or http://www.gnu.org/copyleft/gpl.txt .
 !
 MODULE rigid
-  PUBLIC :: rgd_blk, dyndiag, nonanal, nonanal_ifc, cdiagh2
+  PUBLIC :: rgd_blk, dyndiag, nonanal, nonanal_ifc, cdiagh2, &
+            remove_dyn_interaction
   PRIVATE
   CONTAINS
 !
 !-----------------------------------------------------------------------
-SUBROUTINE rgd_blk(nr1, nr2, nr3, nat, dyn, q, tau, epsil, zeu, bg, omega, alat, loto_2d, sign)
+  SUBROUTINE rgd_blk(nr1, nr2, nr3, nat, dyn, q, tau, epsil, zeu, alph, &
+         bg, omega, alat, loto_2d, sign)
   !-----------------------------------------------------------------------
   !! Compute the rigid-ion (long-range) term for q.  
   !! The long-range term used here, to be added to or subtracted from the
@@ -35,6 +37,8 @@ SUBROUTINE rgd_blk(nr1, nr2, nr3, nat, dyn, q, tau, epsil, zeu, bg, omega, alat,
   !! q-vector 
   REAL(KIND = DP), INTENT(in) :: epsil(3, 3)
   !! dielectric constant tensor
+  REAL(KIND = DP), INTENT(IN) :: alph
+  !! Ewald parameter
   REAL(KIND = DP), INTENT(in) :: zeu(3, 3, nat)
   !! effective charges tensor
   REAL(KIND = DP), INTENT(in) :: sign
@@ -65,8 +69,6 @@ SUBROUTINE rgd_blk(nr1, nr2, nr3, nat, dyn, q, tau, epsil, zeu, bg, omega, alat,
   !! Loop over q-points
   REAL(KIND = DP):: geg
   !! <q+G| epsil | q+G>
-  REAL(KIND = DP) :: alph
-  !! Ewald parameter
   REAL(KIND = DP) :: fac
   !! Prefactor
   REAL(KIND = DP) :: g1, g2, g3
@@ -94,13 +96,12 @@ SUBROUTINE rgd_blk(nr1, nr2, nr3, nat, dyn, q, tau, epsil, zeu, bg, omega, alat,
   COMPLEX(KIND = DP) :: facg
   !! Factor
   !
-  ! alph is the Ewald parameter, geg is an estimate of G^2
-  ! such that the G-space sum is convergent for that alph
+  ! geg is an estimate of G^2 such that the G-space sum is convergent 
+  ! given the value of alph
   ! very rough estimate: geg/4/alph > gmax = 14
   ! (exp (-14) = 10^-6)
   !
   gmax = 14.d0
-  alph = 1.0d0
   geg  = gmax * alph * 4.0d0
   ! 
   ! Estimate of nr1x,nr2x,nr3x generating all vectors up to G^2 < geg
@@ -529,5 +530,37 @@ subroutine cdiagh2 (n,h,ldh,e,v)
   !
   return
 end subroutine cdiagh2
-
+!
+!-----------------------------------------------------------------------
+SUBROUTINE remove_dyn_interaction (d,na_)
+  !-----------------------------------------------------------------------
+  !
+  !   removes from the dynamical matrix the columsn and the rows
+  !   for the atoms with vanishing diagonal blocks (i,j,ia,ia)
+  !
+  USE kinds,       ONLY : DP
+  IMPLICIT NONE
+  INTEGER,INTENT(IN)      :: na_
+  COMPLEX(DP), INTENT(INOUT)  :: d(3,3,na_,na_)
+  REAL(DP)                :: norm
+  !
+  INTEGER ia, ipol, jpol
+  COMPLEX(dp) :: z(3,3)
+  DO ia = 1, na_
+    norm = 0._dp
+    z = d(:,:,ia,ia)
+    DO ipol = 1, 3
+      norm = norm + REAL(z(ipol,ipol))**2 + AIMAG(z(ipol,ipol))**2
+      DO jpol =ipol+1, 3
+         norm = norm + 2._DP * REAL(z(ipol,jpol))**2 + AIMAG(z(ipol,jpol))**2
+      END DO
+    END DO
+    IF (norm .lt. 1.e-8_DP ) THEN
+      d(:,:,ia,:) = 0._DP
+      d(:,:,:,ia)  =  0._DP
+    END IF
+  END DO
+  !
+END SUBROUTINE remove_dyn_interaction
+!
 END MODULE rigid

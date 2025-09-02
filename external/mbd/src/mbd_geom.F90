@@ -4,12 +4,12 @@
 #ifndef LEGENDRE_PREC
 #define LEGENDRE_PREC 15
 #endif
-#include "defaults.h"
 
 module mbd_geom
 !! Representing a molecule or a crystal unit cell.
 
 use mbd_constants
+use mbd_defaults
 use mbd_formulas, only: alpha_dyn_qho, C6_from_alpha, omega_qho
 use mbd_gradients, only: grad_t, grad_request_t
 use mbd_lapack, only: eigvals, inverse
@@ -31,10 +31,7 @@ public :: supercell_circum, get_freq_grid
 
 type, public :: param_t
     !! Calculation-wide paramters.
-    real(dp) :: ts_energy_accuracy = TS_ENERGY_ACCURACY
-    real(dp) :: ts_cutoff_radius = 50d0*ang
-    real(dp) :: ts_num_grad_delta = TS_NUM_GRAD_DELTA
-    real(dp) :: dipole_cutoff = 400d0*ang  ! used only when Ewald is off
+    real(dp) :: dipole_cutoff = 400d0 * ang  ! used only when Ewald is off
     real(dp) :: ewald_real_cutoff_scaling = 1d0
     real(dp) :: ewald_rec_cutoff_scaling = 1d0
     real(dp) :: k_grid_shift = K_GRID_SHIFT
@@ -76,7 +73,11 @@ type, public :: geom_t
     type(logger_t) :: log
         !! Used for logging
 #ifdef WITH_MPI
+#   ifdef WITH_MPIF08
+    type(MPI_Comm) :: mpi_comm = MPI_COMM_WORLD
+#   else
     integer :: mpi_comm = MPI_COMM_WORLD
+#   endif
         !! MPI communicator
 #endif
 #ifdef WITH_SCALAPACK
@@ -106,6 +107,9 @@ type, public :: geom_t
     procedure :: destroy => geom_destroy
     procedure :: siz => geom_siz
     procedure :: has_exc => geom_has_exc
+#ifdef WITH_MPI
+    procedure :: sync_exc => geom_sync_exc
+#endif
     procedure :: clock => geom_clock
 end type
 
@@ -117,12 +121,15 @@ subroutine geom_init(this)
     integer :: i_atom
     real(dp) :: volume, freq_grid_err
     logical :: is_parallel
+    character(len=10) :: log_level_str
 #ifdef WITH_MPI
     logical :: can_parallel_kpts
     integer :: ierr, n_kpts
 #endif
 
     if (.not. associated(this%log%printer)) this%log%printer => printer
+    call get_environment_variable('LIBMBD_LOG_LEVEL', log_level_str)
+    if (log_level_str /= '') read (log_level_str, *) this%log%level
     associate (n => this%param%n_freq)
         allocate (this%freq(0:n))
         call get_freq_grid(n, this%freq(1:n)%val, this%freq(1:n)%weight)
@@ -130,14 +137,14 @@ subroutine geom_init(this)
     this%freq(0)%val = 0d0
     this%freq(0)%weight = 0d0
     freq_grid_err = test_frequency_grid(this%freq)
-    call this%log%info('Frequency grid relative error: ' // tostr(freq_grid_err))
+    call this%log%info('Frequency grid relative error: '//tostr(freq_grid_err))
     call this%timer%init(100)
     if (allocated(this%lattice)) then
         volume = abs(dble(product(eigvals(this%lattice))))
         if (this%param%ewald_on) then
-            this%gamm = 2.5d0/volume**(1d0/3)
-            this%real_space_cutoff = 6d0/this%gamm*this%param%ewald_real_cutoff_scaling
-            this%rec_space_cutoff = 10d0*this%gamm*this%param%ewald_rec_cutoff_scaling
+            this%gamm = 2.5d0 / volume**(1d0 / 3)
+            this%real_space_cutoff = 6d0 / this%gamm * this%param%ewald_real_cutoff_scaling
+            this%rec_space_cutoff = 10d0 * this%gamm * this%param%ewald_rec_cutoff_scaling
         else
             this%real_space_cutoff = this%param%dipole_cutoff
         end if
@@ -161,7 +168,11 @@ subroutine geom_init(this)
     this%idx%parallel = .false.
     if (this%parallel_mode == 'auto' .or. this%parallel_mode == 'atoms') then
 #   ifdef WITH_MPI
+#       ifdef WITH_MPIF08
+        call this%blacs_grid%init(this%mpi_comm%mpi_val)
+#       else
         call this%blacs_grid%init(this%mpi_comm)
+#       endif
 #   else
         call this%blacs_grid%init()
 #   endif
@@ -188,14 +199,18 @@ subroutine geom_init(this)
     is_parallel = .false.
 #endif
     if (.not. is_parallel) then
-        this%idx%i_atom = [(i_atom, i_atom = 1, this%siz())]
+        this%idx%i_atom = [(i_atom, i_atom=1, this%siz())]
         this%idx%j_atom = this%idx%i_atom
     end if
     this%idx%n_atoms = this%siz()
-    call this%log%info('Will use parallel mode: ' // this%parallel_mode)
+    call this%log%info('Will use parallel mode: '//this%parallel_mode)
 #ifdef WITH_SCALAPACK
     if (this%idx%parallel) then
-        call this%log%info('BLACS block size: ' // tostr(this%blacs%blocksize))
+        call this%log%info( &
+            'BLACS grid: '//trim(tostr(this%blacs_grid%nprows))//' x ' &
+            //trim(tostr(this%blacs_grid%npcols)) &
+        )
+        call this%log%info('BLACS block size: '//tostr(this%blacs%blocksize))
     end if
 #endif
 end subroutine
@@ -209,6 +224,7 @@ subroutine geom_destroy(this)
     deallocate (this%freq)
     deallocate (this%timer%timestamps)
     deallocate (this%timer%counts)
+    deallocate (this%timer%levels)
 end subroutine
 
 integer function geom_siz(this) result(siz)
@@ -227,6 +243,30 @@ logical function geom_has_exc(this) result(has_exc)
     has_exc = this%exc%code /= 0
 end function
 
+#ifdef WITH_MPI
+subroutine geom_sync_exc(this)
+    class(geom_t), intent(inout) :: this
+
+    integer, allocatable :: codes(:)
+    integer :: err, rank
+
+    allocate (codes(this%mpi_size))
+    call MPI_ALLGATHER(this%exc%code, 1, MPI_INTEGER, codes, 1, MPI_INTEGER, this%mpi_comm, err)
+    do rank = 0, size(codes) - 1
+        if (codes(rank + 1) /= 0) then
+            call MPI_BCAST(this%exc%code, 1, MPI_INTEGER, rank, this%mpi_comm, err)
+            call MPI_BCAST( &
+                this%exc%msg, len(this%exc%msg), MPI_CHARACTER, rank, this%mpi_comm, err &
+            )
+            call MPI_BCAST( &
+                this%exc%origin, len(this%exc%origin), MPI_CHARACTER, rank, this%mpi_comm, err &
+            )
+            exit
+        end if
+    end do
+end subroutine
+#endif
+
 function supercell_circum(lattice, radius) result(sc)
     real(dp), intent(in) :: lattice(3, 3)
     real(dp), intent(in) :: radius
@@ -235,11 +275,11 @@ function supercell_circum(lattice, radius) result(sc)
     real(dp) :: ruc(3, 3), layer_sep(3)
     integer :: i
 
-    ruc = 2*pi*inverse(transpose(lattice))
-    do concurrent (i = 1:3)
-        layer_sep(i) = sum(lattice(:, i)*ruc(:, i)/sqrt(sum(ruc(:, i)**2)))
+    ruc = 2 * pi * inverse(transpose(lattice))
+    do concurrent(i=1:3)
+        layer_sep(i) = sum(lattice(:, i) * ruc(:, i) / sqrt(sum(ruc(:, i)**2)))
     end do
-    sc = ceiling(radius/layer_sep+0.5d0)
+    sc = ceiling(radius / layer_sep + 0.5d0)
 end function
 
 subroutine geom_clock(this, id)
@@ -262,8 +302,8 @@ subroutine get_freq_grid(n, x, w, L)
         L_ = 0.6d0
     end if
     call gauss_legendre(n, x, w)
-    w = 2*L_/(1-x)**2*w
-    x = L_*(1+x)/(1-x)
+    w = 2 * L_ / (1 - x)**2 * w
+    x = L_ * (1 + x) / (1 - x)
     w = w(n:1:-1)
     x = x(n:1:-1)
 end subroutine
@@ -276,7 +316,7 @@ subroutine gauss_legendre(n, r, w)
     integer, parameter :: n_iter = 1000
     real(q) :: x, f, df, dx
     integer :: k, iter, i
-    real(q) :: Pk(0:n), Pk1(0:n-1), Pk2(0:n-2)
+    real(q) :: Pk(0:n), Pk1(0:n - 1), Pk2(0:n - 2)
 
     if (n == 1) then
         r(1) = 0d0
@@ -286,29 +326,29 @@ subroutine gauss_legendre(n, r, w)
     Pk2(0) = 1._q  ! k = 0
     Pk1(0:1) = [0._q, 1._q]  ! k = 1
     do k = 2, n
-        Pk(0:k) = ((2*k-1) * &
-            [0._q, Pk1(0:k-1)]-(k-1)*[Pk2(0:k-2), 0._q, 0._q])/k
+        Pk(0:k) = ((2 * k - 1)* &
+            [0._q, Pk1(0:k - 1)] - (k - 1)*[Pk2(0:k - 2), 0._q, 0._q]) / k
         if (k < n) then
-            Pk2(0:k-1) = Pk1(0:k-1)
+            Pk2(0:k - 1) = Pk1(0:k - 1)
             Pk1(0:k) = Pk(0:k)
         end if
     end do
     ! now Pk contains k-th Legendre polynomial
     do i = 1, n
-        x = cos(pi*(i-0.25_q)/(n+0.5_q))
+        x = cos(pi * (i - 0.25_q) / (n + 0.5_q))
         do iter = 1, n_iter
             df = 0._q
             f = Pk(n)
-            do k = n-1, 0, -1
-                df = f + x*df
-                f = Pk(k) + x*f
+            do k = n - 1, 0, -1
+                df = f + x * df
+                f = Pk(k) + x * f
             end do
-            dx = f/df
-            x = x-dx
-            if (abs(dx) < 10*epsilon(dx)) exit
+            dx = f / df
+            x = x - dx
+            if (abs(dx) < 10 * epsilon(dx)) exit
         end do
         r(i) = dble(x)
-        w(i) = dble(2/((1-x**2)*df**2))
+        w(i) = dble(2 / ((1 - x**2) * df**2))
     end do
 end subroutine
 
@@ -325,7 +365,7 @@ real(dp) function test_frequency_grid(freq) result(error)
     w = omega_qho(C6_ref, a0)
     alpha = alpha_dyn_qho(a0, w, freq, dalpha, grad)
     C6 = C6_from_alpha(alpha, freq)
-    error = abs(C6(1)/C6_ref(1)-1d0)
+    error = abs(C6(1) / C6_ref(1) - 1d0)
 end function
 
 end module

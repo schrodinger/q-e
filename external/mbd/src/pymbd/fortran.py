@@ -3,6 +3,7 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 from __future__ import division, print_function
 
+import re
 from functools import wraps
 
 import numpy as np
@@ -13,20 +14,21 @@ from .pymbd import _array, from_volumes
 try:
     from ._libmbd import ffi as _ffi, lib as _lib
 except ImportError:
-    raise Exception('Pymbd C extension unimportable, cannot use Fortran')
+    raise Exception('pyMBD C extension unimportable, cannot use Fortran') from None
 
 __all__ = ['MBDGeom', 'with_mpi', 'with_scalapack']
 
 with_mpi = _lib.cmbd_with_mpi
-"""Whether Libmbd was compiled with MPI"""
+"""Whether libMBD was compiled with MPI"""
 
 with_scalapack = _lib.cmbd_with_scalapack
-"""Whether Libmbd was compiled with Scalapack"""
+"""Whether libMBD was compiled with Scalapack"""
 
 LIBMBD_VERSION = (
     _lib.cmbd_version_major,
     _lib.cmbd_version_minor,
     _lib.cmbd_version_patch,
+    _ffi.string(_lib.cmbd_version_suffix).strip().decode(),
 )
 
 # do not test versions when running autodoc
@@ -36,14 +38,14 @@ if PYMBD_VERSION and isinstance(LIBMBD_VERSION[0], int):
         assert PYMBD_VERSION[1] == LIBMBD_VERSION[1]
     else:
         assert PYMBD_VERSION[1] <= LIBMBD_VERSION[1]
+    if len(PYMBD_VERSION) == 4:
+        git_commit = re.split('[+-]', PYMBD_VERSION[3])[1]
+        assert LIBMBD_VERSION[3].endswith(git_commit)
 
-if with_mpi:
-    from mpi4py import MPI  # noqa
 
-
-class MBDFortranException(Exception):
+class MBDFortranError(Exception):
     def __init__(self, code, origin, msg):
-        super(MBDFortranException, self).__init__(msg)
+        super(MBDFortranError, self).__init__(msg)
         self.code = code
         self.origin = origin
 
@@ -60,7 +62,7 @@ def _auto_context(method):
 
 
 class MBDGeom(object):
-    """Represents an initialized Libmbd `geom_t <../type/geom_t.html>`_ object.
+    """Represents an initialized libMBD `geom_t <../type/geom_t.html>`_ object.
 
     :param array-like coords: (a.u.) atomic coordinates as rows
     :param array-like lattice: (a.u.) lattice vectors as rows
@@ -85,6 +87,7 @@ class MBDGeom(object):
         get_rpa_orders=False,
         rpa_rescale_eigs=False,
         max_atoms_per_block=None,
+        ewald_cutoff_scaling=(1.0, 1.0),
     ):
         self._geom_f = None
         self._coords, self._lattice = map(_array, (coords, lattice))
@@ -96,6 +99,7 @@ class MBDGeom(object):
         self._get_rpa_orders = get_rpa_orders
         self._rpa_rescale_eigs = rpa_rescale_eigs
         self._max_atoms_per_block = max_atoms_per_block
+        self._ewald_cutoff_scaling = ewald_cutoff_scaling
 
     def __len__(self):
         return len(self._coords)
@@ -114,6 +118,7 @@ class MBDGeom(object):
             self._get_rpa_orders,
             self._rpa_rescale_eigs,
             self._max_atoms_per_block or 0,
+            self._ewald_cutoff_scaling,
         )
         return self
 
@@ -127,7 +132,7 @@ class MBDGeom(object):
         msg = _ffi.new('char[150]')
         _lib.cmbd_get_exception(self._geom_f, _cast('int*', code), origin, msg)
         if code != 0:
-            raise MBDFortranException(
+            raise MBDFortranError(
                 int(code), _ffi.string(origin).decode(), _ffi.string(msg).decode()
             )
 
@@ -153,8 +158,12 @@ class MBDGeom(object):
         """Whether structure is a crystal."""
         return self._lattice is not None
 
+    def print_timing(self):
+        """Print timing from libMBD."""
+        _lib.cmbd_print_timing(self._geom_f)
+
     @_auto_context
-    def ts_energy(self, alpha_0, C6, R_vdw, sR, d=20.0, damping='fermi'):
+    def ts_energy(self, alpha_0, C6, R_vdw, sR, d=20.0, damping='fermi', force=False):
         """Calculate a TS energy.
 
         :param array-like alpha_0: (a.u.) atomic polarizabilities
@@ -163,20 +172,40 @@ class MBDGeom(object):
         :param float sR: TS damping parameter :math:`s_R`
         :param float d: TS damping parameter :math:`d`
         :param damping str: type of damping
+        :param force bool: if True, calculate energy gradients
         """
         alpha_0, C6, R_vdw = map(_array, (alpha_0, C6, R_vdw))
+        n_atoms = len(self)
         damping_f = _lib.cmbd_init_damping(
             len(self), damping.encode(), _cast('double*', R_vdw), _ffi.NULL, sR, d
         )
-        ene = _lib.cmbd_ts_energy(
-            self._geom_f, _cast('double*', alpha_0), _cast('double*', C6), damping_f
+        res_f = _lib.cmbd_ts_energy(
+            self._geom_f,
+            _cast('double*', alpha_0),
+            _cast('double*', C6),
+            damping_f,
+            force,
         )
         _lib.cmbd_destroy_damping(damping_f)
         self._check_exc()
+        ene = np.empty(1)  # for some reason np.array(0) doesn't work
+        gradients, lattice_gradients = 2 * [None]
+        if force:
+            gradients = np.zeros((n_atoms, 3))
+            if self.has_lattice():
+                lattice_gradients = np.zeros((3, 3))
+        results = (ene, gradients, lattice_gradients, *(7 * [None]))
+        _lib.cmbd_get_results(res_f, *(_cast('double*', x) for x in results))
+        _lib.cmbd_destroy_result(res_f)
+        ene = ene.item()
+        if force:
+            ene = (ene, gradients)
+            if self.has_lattice():
+                ene += (lattice_gradients,)
         return ene
 
     @_auto_context
-    def mbd_energy(
+    def mbd_energy(  # noqa: C901
         self,
         alpha_0,
         C6,
@@ -187,6 +216,7 @@ class MBDGeom(object):
         damping='fermi,dip',
         variant='rsscs',
         force=False,
+        intermediates=False,
     ):
         r"""Calculate an MBD energy.
 
@@ -226,11 +256,14 @@ class MBDGeom(object):
         self._check_exc()
         ene = np.empty(1)  # for some reason np.array(0) doesn't work
         gradients, lattice_gradients = 2 * [None]
+        alpha_0_scs, C6_scs = 2 * [None]
         eigs, modes, rpa_orders, eigs_k, modes_k = 5 * [None]
         if force:
             gradients = np.zeros((n_atoms, 3))
             if self.has_lattice():
                 lattice_gradients = np.zeros((3, 3))
+        if intermediates:
+            alpha_0_scs, C6_scs = np.zeros(n_atoms), np.zeros(n_atoms)
         if self._get_spectrum:
             if self.has_lattice():
                 n_kpts = (
@@ -256,6 +289,8 @@ class MBDGeom(object):
             rpa_orders,
             eigs_k,
             modes_k,
+            alpha_0_scs,
+            C6_scs,
         )
         _lib.cmbd_get_results(res_f, *(_cast('double*', x) for x in results))
         _lib.cmbd_destroy_result(res_f)
@@ -266,10 +301,14 @@ class MBDGeom(object):
             ene = ene, eigs, modes
         elif self._get_rpa_orders:
             ene = ene, rpa_orders
+        if force or intermediates:
+            ene = (ene,)
         if force:
-            ene = (ene, gradients)
+            ene += (gradients,)
             if self.has_lattice():
                 ene += (lattice_gradients,)
+        if intermediates:
+            ene += (alpha_0_scs, C6_scs)
         return ene
 
     @_auto_context
@@ -355,6 +394,43 @@ class MBDGeom(object):
         )
         self._check_exc()
         return res
+
+    @_auto_context
+    def nonint_density(self, pts, q, m, w):  # noqa: D102
+        n_pts = len(pts)
+        n_atoms = len(self)
+        rho = np.empty(n_pts)
+        _lib.cmbd_nonint_density(
+            self._geom_f,
+            n_atoms,
+            n_pts,
+            _cast('double*', pts),
+            _cast('double*', q),
+            _cast('double*', m),
+            _cast('double*', w),
+            _cast('double*', rho),
+        )
+        self._check_exc()
+        return rho
+
+    @_auto_context
+    def int_density(self, pts, q, m, w_t, modes):  # noqa: D102
+        n_pts = len(pts)
+        n_atoms = len(self)
+        rho = np.empty(n_pts)
+        _lib.cmbd_int_density(
+            self._geom_f,
+            n_atoms,
+            n_pts,
+            _cast('double*', pts),
+            _cast('double*', q),
+            _cast('double*', m),
+            _cast('double*', w_t),
+            _cast('double*', modes),
+            _cast('double*', rho),
+        )
+        self._check_exc()
+        return rho
 
 
 def _ndarray(ptr, shape=None, dtype='float'):

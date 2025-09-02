@@ -164,4 +164,4 @@ SUBROUTINE set_local_atomo(nat, nat_todo, atomo, nsym, irt,  nat_l, atomo_l)
    ALLOCATE (atomo_l(nat_l))
    atomo_l = PACK([(na,na=1,nat)], MASK = ifat == 1)
    DEALLOCATE(ifat)
-END SUBROUTINE set_local_atomo
+END SUBROUTINE set_local_atomo 

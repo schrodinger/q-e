@@ -48,10 +48,15 @@ MODULE qes_reset_module
     MODULE PROCEDURE qes_reset_HubbardInterSpecieV
     MODULE PROCEDURE qes_reset_SiteMoment
     MODULE PROCEDURE qes_reset_HubbardJ
+    MODULE PROCEDURE qes_reset_vector
+    MODULE PROCEDURE qes_reset_HubbardM
     MODULE PROCEDURE qes_reset_ChannelOcc
     MODULE PROCEDURE qes_reset_HubbardOcc
     MODULE PROCEDURE qes_reset_SitMag
     MODULE PROCEDURE qes_reset_starting_ns
+    MODULE PROCEDURE qes_reset_integerVector
+    MODULE PROCEDURE qes_reset_orderUm
+    MODULE PROCEDURE qes_reset_matrix
     MODULE PROCEDURE qes_reset_Hubbard_ns
     MODULE PROCEDURE qes_reset_HubbardBack
     MODULE PROCEDURE qes_reset_vdW
@@ -89,6 +94,7 @@ MODULE qes_reset_module
     MODULE PROCEDURE qes_reset_inputOccupations
     MODULE PROCEDURE qes_reset_outputElectricField
     MODULE PROCEDURE qes_reset_BerryPhaseOutput
+    MODULE PROCEDURE qes_reset_sawtoothEnergy
     MODULE PROCEDURE qes_reset_dipoleOutput
     MODULE PROCEDURE qes_reset_finiteFieldOut
     MODULE PROCEDURE qes_reset_polarization
@@ -121,13 +127,11 @@ MODULE qes_reset_module
     MODULE PROCEDURE qes_reset_cp_cellNose
     MODULE PROCEDURE qes_reset_scalmags
     MODULE PROCEDURE qes_reset_d3mags
-    MODULE PROCEDURE qes_reset_vector
-    MODULE PROCEDURE qes_reset_integerVector
-    MODULE PROCEDURE qes_reset_matrix
     MODULE PROCEDURE qes_reset_integerMatrix
     MODULE PROCEDURE qes_reset_scalarQuantity
     MODULE PROCEDURE qes_reset_rism3d
     MODULE PROCEDURE qes_reset_rismlaue
+    MODULE PROCEDURE qes_reset_two_chem
   END INTERFACE qes_reset
   !
   CONTAINS
@@ -269,6 +273,9 @@ MODULE qes_reset_module
     IF (obj%spin_constraints_ispresent) &
       CALL qes_reset_spin_constraints(obj%spin_constraints)
     obj%spin_constraints_ispresent = .FALSE.
+    IF (obj%twoch__ispresent) &
+      CALL qes_reset_two_chem(obj%twoch_)
+    obj%twoch__ispresent = .FALSE.
     !
   END SUBROUTINE qes_reset_input
   !
@@ -341,6 +348,9 @@ MODULE qes_reset_module
     IF (obj%rismlaue_ispresent) &
       CALL qes_reset_rismlaue(obj%rismlaue)
     obj%rismlaue_ispresent = .FALSE.
+    IF (obj%two_chem_ispresent) &
+      CALL qes_reset_two_chem(obj%two_chem)
+    obj%two_chem_ispresent = .FALSE.
     !
   END SUBROUTINE qes_reset_output
   !
@@ -504,6 +514,7 @@ MODULE qes_reset_module
     obj%crystal_positions_ispresent = .FALSE.
     CALL qes_reset_cell(obj%cell)
     obj%nat_ispresent = .FALSE.
+    obj%num_of_atomic_wfc_ispresent = .FALSE.
     obj%alat_ispresent = .FALSE.
     obj%bravais_index_ispresent = .FALSE.
     obj%alternative_axes_ispresent = .FALSE.
@@ -676,6 +687,16 @@ MODULE qes_reset_module
       obj%ndim_Hubbard_U = 0
       obj%Hubbard_U_ispresent = .FALSE.
     ENDIF
+    IF (obj%Hubbard_Um_ispresent) THEN
+      IF (ALLOCATED(obj%Hubbard_Um)) THEN
+        DO i=1, SIZE(obj%Hubbard_Um)
+          CALL qes_reset_HubbardM(obj%Hubbard_Um(i))
+        ENDDO
+        DEALLOCATE(obj%Hubbard_Um)
+      ENDIF
+      obj%ndim_Hubbard_Um = 0
+      obj%Hubbard_Um_ispresent = .FALSE.
+    ENDIF
     IF (obj%Hubbard_J0_ispresent) THEN
       IF (ALLOCATED(obj%Hubbard_J0)) THEN
         DO i=1, SIZE(obj%Hubbard_J0)
@@ -745,6 +766,16 @@ MODULE qes_reset_module
       ENDIF
       obj%ndim_Hubbard_ns = 0
       obj%Hubbard_ns_ispresent = .FALSE.
+    ENDIF
+    IF (obj%Hub_m_order_ispresent) THEN
+      IF (ALLOCATED(obj%Hub_m_order)) THEN
+        DO i=1, SIZE(obj%Hub_m_order)
+          CALL qes_reset_orderUm(obj%Hub_m_order(i))
+        ENDDO
+        DEALLOCATE(obj%Hub_m_order)
+      ENDIF
+      obj%ndim_Hub_m_order = 0
+      obj%Hub_m_order_ispresent = .FALSE.
     ENDIF
     obj%U_projection_type_ispresent = .FALSE.
     IF (obj%Hubbard_back_ispresent) THEN
@@ -843,6 +874,44 @@ MODULE qes_reset_module
   END SUBROUTINE qes_reset_HubbardJ
   !
   !
+  SUBROUTINE qes_reset_vector(obj)
+    !
+    IMPLICIT NONE
+    TYPE(vector_type),INTENT(INOUT)    :: obj
+    !
+    obj%tagname = ""
+    obj%lwrite  = .FALSE.
+    obj%lread  = .FALSE.
+    !
+    IF (ALLOCATED(obj%vector)) THEN
+      DEALLOCATE(obj%vector)
+    ENDIF
+    obj%size = 0
+    !
+  END SUBROUTINE qes_reset_vector
+  !
+  !
+  SUBROUTINE qes_reset_HubbardM(obj)
+    !
+    IMPLICIT NONE
+    TYPE(HubbardM_type),INTENT(INOUT)    :: obj
+    !
+    obj%tagname = ""
+    obj%lwrite  = .FALSE.
+    obj%lread  = .FALSE.
+    !
+    IF (ALLOCATED(obj%HubbardM)) THEN
+      DEALLOCATE(obj%HubbardM)
+    ENDIF
+    obj%size = 0
+    obj%specie_ispresent = .FALSE.
+    obj%label_ispresent = .FALSE.
+    obj%spin_ispresent = .FALSE.
+    obj%jjj_ispresent = .FALSE.
+    !
+  END SUBROUTINE qes_reset_HubbardM
+  !
+  !
   SUBROUTINE qes_reset_ChannelOcc(obj)
     !
     IMPLICIT NONE
@@ -913,6 +982,66 @@ MODULE qes_reset_module
     obj%spin_ispresent = .FALSE.
     !
   END SUBROUTINE qes_reset_starting_ns
+  !
+  !
+  SUBROUTINE qes_reset_integerVector(obj)
+    !
+    IMPLICIT NONE
+    TYPE(integerVector_type),INTENT(INOUT)    :: obj
+    !
+    obj%tagname = ""
+    obj%lwrite  = .FALSE.
+    obj%lread  = .FALSE.
+    !
+    IF (ALLOCATED(obj%integerVector)) THEN
+      DEALLOCATE(obj%integerVector)
+    ENDIF
+    obj%size = 0
+    !
+  END SUBROUTINE qes_reset_integerVector
+  !
+  !
+  SUBROUTINE qes_reset_orderUm(obj)
+    !
+    IMPLICIT NONE
+    TYPE(orderUm_type),INTENT(INOUT)    :: obj
+    !
+    obj%tagname = ""
+    obj%lwrite  = .FALSE.
+    obj%lread  = .FALSE.
+    !
+    IF (ALLOCATED(obj%orderUm)) THEN
+      DEALLOCATE(obj%orderUm)
+    ENDIF
+    obj%size = 0
+    obj%specie_ispresent = .FALSE.
+    obj%label_ispresent = .FALSE.
+    obj%spin_ispresent = .FALSE.
+    obj%atomidx_ispresent = .FALSE.
+    !
+  END SUBROUTINE qes_reset_orderUm
+  !
+  !
+  SUBROUTINE qes_reset_matrix(obj)
+    !
+    IMPLICIT NONE
+    TYPE(matrix_type),INTENT(INOUT)    :: obj
+    !
+    obj%tagname = ""
+    obj%lwrite  = .FALSE.
+    obj%lread  = .FALSE.
+    !
+    IF (ALLOCATED(obj%matrix)) THEN
+      DEALLOCATE(obj%matrix)
+    ENDIF
+    IF (ALLOCATED(obj%dims)) THEN
+      DEALLOCATE(obj%dims)
+    ENDIF
+    obj%rank = 0
+    obj%order = 'F'
+    obj%order_ispresent = .FALSE.
+    !
+  END SUBROUTINE qes_reset_matrix
   !
   !
   SUBROUTINE qes_reset_Hubbard_ns(obj)
@@ -1646,6 +1775,9 @@ MODULE qes_reset_module
     IF (obj%finiteElectricFieldInfo_ispresent) &
       CALL qes_reset_finiteFieldOut(obj%finiteElectricFieldInfo)
     obj%finiteElectricFieldInfo_ispresent = .FALSE.
+    IF (obj%sawtoothEnergy_ispresent) &
+      CALL qes_reset_sawtoothEnergy(obj%sawtoothEnergy)
+    obj%sawtoothEnergy_ispresent = .FALSE.
     IF (obj%dipoleInfo_ispresent) &
       CALL qes_reset_dipoleOutput(obj%dipoleInfo)
     obj%dipoleInfo_ispresent = .FALSE.
@@ -1684,6 +1816,23 @@ MODULE qes_reset_module
     obj%ndim_electronicPolarization = 0
     !
   END SUBROUTINE qes_reset_BerryPhaseOutput
+  !
+  !
+  SUBROUTINE qes_reset_sawtoothEnergy(obj)
+    !
+    IMPLICIT NONE
+    TYPE(sawtoothEnergy_type),INTENT(INOUT)    :: obj
+    !
+    obj%tagname = ""
+    obj%lwrite  = .FALSE.
+    obj%lread  = .FALSE.
+    !
+    obj%eamp_ispresent = .FALSE.
+    obj%eopreg_ispresent = .FALSE.
+    obj%emaxpos_ispresent = .FALSE.
+    obj%edir_ispresent = .FALSE.
+    !
+  END SUBROUTINE qes_reset_sawtoothEnergy
   !
   !
   SUBROUTINE qes_reset_dipoleOutput(obj)
@@ -1805,6 +1954,7 @@ MODULE qes_reset_module
     IF (obj%opt_conv_ispresent) &
       CALL qes_reset_opt_conv(obj%opt_conv)
     obj%opt_conv_ispresent = .FALSE.
+    obj%wf_collected_ispresent = .FALSE.
     !
   END SUBROUTINE qes_reset_convergence_info
   !
@@ -1859,6 +2009,7 @@ MODULE qes_reset_module
     obj%lwrite  = .FALSE.
     obj%lread  = .FALSE.
     !
+    obj%colin_mag_ispresent = .FALSE.
     IF (ALLOCATED(obj%symmetry)) THEN
       DO i=1, SIZE(obj%symmetry)
         CALL qes_reset_symmetry(obj%symmetry(i))
@@ -1932,6 +2083,9 @@ MODULE qes_reset_module
     obj%lwrite  = .FALSE.
     obj%lread  = .FALSE.
     !
+    IF (obj%esm_ispresent) &
+      CALL qes_reset_esm(obj%esm)
+    obj%esm_ispresent = .FALSE.
     !
   END SUBROUTINE qes_reset_outputPBC
   !
@@ -1996,7 +2150,6 @@ MODULE qes_reset_module
     obj%nbnd_ispresent = .FALSE.
     obj%nbnd_up_ispresent = .FALSE.
     obj%nbnd_dw_ispresent = .FALSE.
-    obj%num_of_atomic_wfc_ispresent = .FALSE.
     obj%fermi_energy_ispresent = .FALSE.
     obj%highestOccupiedLevel_ispresent = .FALSE.
     obj%lowestUnoccupiedLevel_ispresent = .FALSE.
@@ -2239,62 +2392,6 @@ MODULE qes_reset_module
   END SUBROUTINE qes_reset_d3mags
   !
   !
-  SUBROUTINE qes_reset_vector(obj)
-    !
-    IMPLICIT NONE
-    TYPE(vector_type),INTENT(INOUT)    :: obj
-    !
-    obj%tagname = ""
-    obj%lwrite  = .FALSE.
-    obj%lread  = .FALSE.
-    !
-    IF (ALLOCATED(obj%vector)) THEN
-      DEALLOCATE(obj%vector)
-    ENDIF
-    obj%size = 0
-    !
-  END SUBROUTINE qes_reset_vector
-  !
-  !
-  SUBROUTINE qes_reset_integerVector(obj)
-    !
-    IMPLICIT NONE
-    TYPE(integerVector_type),INTENT(INOUT)    :: obj
-    !
-    obj%tagname = ""
-    obj%lwrite  = .FALSE.
-    obj%lread  = .FALSE.
-    !
-    IF (ALLOCATED(obj%integerVector)) THEN
-      DEALLOCATE(obj%integerVector)
-    ENDIF
-    obj%size = 0
-    !
-  END SUBROUTINE qes_reset_integerVector
-  !
-  !
-  SUBROUTINE qes_reset_matrix(obj)
-    !
-    IMPLICIT NONE
-    TYPE(matrix_type),INTENT(INOUT)    :: obj
-    !
-    obj%tagname = ""
-    obj%lwrite  = .FALSE.
-    obj%lread  = .FALSE.
-    !
-    IF (ALLOCATED(obj%matrix)) THEN
-      DEALLOCATE(obj%matrix)
-    ENDIF
-    IF (ALLOCATED(obj%dims)) THEN
-      DEALLOCATE(obj%dims)
-    ENDIF
-    obj%rank = 0
-    obj%order = 'F'
-    obj%order_ispresent = .FALSE.
-    !
-  END SUBROUTINE qes_reset_matrix
-  !
-  !
   SUBROUTINE qes_reset_integerMatrix(obj)
     !
     IMPLICIT NONE
@@ -2378,6 +2475,20 @@ MODULE qes_reset_module
     obj%left_buffer_v_ispresent = .FALSE.
     !
   END SUBROUTINE qes_reset_rismlaue
+  !
+  !
+  SUBROUTINE qes_reset_two_chem(obj)
+    !
+    IMPLICIT NONE
+    TYPE(two_chem_type),INTENT(INOUT)    :: obj
+    !
+    obj%tagname = ""
+    obj%lwrite  = .FALSE.
+    obj%lread  = .FALSE.
+    !
+    obj%ef_cond_ispresent = .FALSE.
+    !
+  END SUBROUTINE qes_reset_two_chem
   !
   !
 END MODULE qes_reset_module

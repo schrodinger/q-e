@@ -16,7 +16,7 @@ subroutine incdrhoscf_nc (drhoscf, weight, ik, dbecsum, dpsi, rsign)
   USE kinds,                ONLY : DP
   USE ions_base,            ONLY : nat
   USE cell_base,            ONLY : omega
-  USE fft_base,             ONLY : dffts, dfftp
+  USE fft_base,             ONLY : dffts
   USE fft_interfaces,       ONLY : invfft
   USE lsda_mod,             ONLY : nspin
   USE noncollin_module,     ONLY : npol, domag, nspin_mag
@@ -31,9 +31,6 @@ subroutine incdrhoscf_nc (drhoscf, weight, ik, dbecsum, dpsi, rsign)
   USE mp_bands,             ONLY : me_bgrp, inter_bgrp_comm, ntask_groups
   USE mp,                   ONLY : mp_sum
   USE fft_helper_subroutines
-#if defined(__CUDA)
-  USE wavefunctions_gpum,   ONLY : evc_d
-#endif
 
   IMPLICIT NONE
   !
@@ -46,7 +43,7 @@ subroutine incdrhoscf_nc (drhoscf, weight, ik, dbecsum, dpsi, rsign)
   ! the sign in front of the response of the magnetization density
   COMPLEX(DP), INTENT(IN) :: dpsi(npwx*npol,nbnd)
   ! input: the perturbed wfcs at the given k point
-  COMPLEX(DP), INTENT(INOUT) :: drhoscf (dfftp%nnr,nspin_mag), dbecsum (nhm,nhm,nat,nspin)
+  COMPLEX(DP), INTENT(INOUT) :: drhoscf (dffts%nnr,nspin_mag), dbecsum (nhm,nhm,nat,nspin)
   ! input/output: the accumulated change of the charge density and dbecsum
   !
   !   here the local variable
@@ -61,7 +58,7 @@ subroutine incdrhoscf_nc (drhoscf, weight, ik, dbecsum, dpsi, rsign)
   COMPLEX(DP), ALLOCATABLE :: tg_psi (:,:), tg_dpsi (:,:), tg_drho(:,:)
   !
   INTEGER :: npw, npwq, ikk, ikq, itmp
-  INTEGER :: ibnd, jbnd, ir, ir3, ig, incr, v_siz, v_sizp, idx, ioff, ioff_tg, nxyp
+  INTEGER :: ibnd, jbnd, ir, ir3, ig, incr, v_siz, idx, ioff, ioff_tg, nxyp
   INTEGER :: ntgrp, right_inc
   ! counters
   !
@@ -70,7 +67,7 @@ subroutine incdrhoscf_nc (drhoscf, weight, ik, dbecsum, dpsi, rsign)
   INTEGER, POINTER, DEVICE :: nl_d(:)
   !
   nl_d  => dffts%nl_d
-  evc_d = evc
+  !$acc update device(evc) 
 #else
   INTEGER, ALLOCATABLE :: nl_d(:)
   !
@@ -103,13 +100,12 @@ subroutine incdrhoscf_nc (drhoscf, weight, ik, dbecsum, dpsi, rsign)
      !
   ELSE
      v_siz = dffts%nnr
-     v_sizp = dfftp%nnr
   ENDIF
   !
   ! dpsi contains the   perturbed wavefunctions of this k point
   ! evc  contains the unperturbed wavefunctions of this k point
   !
-  !$acc data copyin(dpsi(1:npwx*npol,1:nbnd)) copy(drhoscf(1:v_sizp,1:nspin_mag)) create(psi(1:v_siz,1:npol),dpsic(1:v_siz,1:npol)) present(igk_k) deviceptr(evc_d, nl_d)
+  !$acc data copyin(dpsi(1:npwx*npol,1:nbnd)) copy(drhoscf(1:v_siz,1:nspin_mag)) create(psi(1:v_siz,1:npol),dpsic(1:v_siz,1:npol)) present(igk_k) deviceptr(nl_d)
   do ibnd = 1, nbnd_occ(ikk), incr
 
      IF (dffts%has_task_groups) THEN
@@ -185,13 +181,8 @@ subroutine incdrhoscf_nc (drhoscf, weight, ik, dbecsum, dpsi, rsign)
         !$acc parallel loop
         do ig = 1, npw
            itmp = nl_d ( igk_k(ig,ikk) )
-#if defined(__CUDA)
-           psi (itmp, 1) = evc_d (ig, ibnd)
-           psi (itmp, 2) = evc_d (ig+npwx, ibnd)
-#else
            psi (itmp, 1) = evc (ig, ibnd)
            psi (itmp, 2) = evc (ig+npwx, ibnd)
-#endif
         enddo
         !$acc parallel loop
         do ig = 1, npwq

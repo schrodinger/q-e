@@ -22,9 +22,26 @@ MODULE qexsd_copy
        qexsd_copy_atomic_species, qexsd_copy_atomic_structure, &
        qexsd_copy_symmetry, qexsd_copy_algorithmic_info, &
        qexsd_copy_basis_set, qexsd_copy_dft, qexsd_copy_band_structure, &
-       qexsd_copy_efield, qexsd_copy_magnetization, qexsd_copy_kpoints, &
-       qexsd_copy_efermi, qexsd_copy_rism3d, qexsd_copy_rismlaue
-  !
+       qexsd_copy_efield, qexsd_copy_magnetization, qexsd_copy_kpoints, copy_order_um_from_xml, &
+       qexsd_copy_efermi, qexsd_copy_rism3d, qexsd_copy_rismlaue, qexsd_copy_esm, qexsd_copy_twochem 
+ !
+ INTERFACE 
+  SUBROUTINE copy_order_um_from_xml(dftU_obj, nsp, nat, Hubbard_lmax, order_um)
+    !! routine that copies order_um values from xml file to allocatable order_um, used 
+    !! for the initialization of the order_um variable in ldaU module. 
+    !FIXME to be collected with other related copying from dftU object or better read from the scf file
+     USE qes_types_module, only: dftU_type
+     IMPLICIT NONE
+     TYPE(dftU_type),INTENT(IN)  :: dftU_obj
+     !! object containing the dftU infortmation read from the XML file
+     INTEGER,INTENT(IN)          :: nsp, nat, Hubbard_lmax
+     !! number of species defined for this calculation 
+     !! number of atoms for this calculation
+     !! max l value for species in this calculatio 
+     INTEGER, ALLOCATABLE,INTENT(INOUT) :: order_um(:,:,:)  
+     !! allocatable 3-rank array to be written dimensions will be 2*Hubbarl_lmax+1, nspin, nat  
+  END SUBROUTINE copy_order_um_from_xml 
+END INTERFACE
 CONTAINS
   !-------------------------------------------------------------------------------
   SUBROUTINE qexsd_copy_geninfo (geninfo_obj, qexsd_fmt, qexsd_version)
@@ -126,7 +143,7 @@ CONTAINS
 
   !--------------------------------------------------------------------------
   SUBROUTINE qexsd_copy_atomic_structure (atomic_structure, nsp, atm, &
-       nat, tau, ityp, alat, a1, a2, a3, ibrav )
+       nat, tau, ityp, alat, a1, a2, a3, ibrav, natomwfc )
   !--------------------------------------------------------------------------
     
     USE qes_types_module, ONLY : atomic_structure_type
@@ -137,7 +154,7 @@ CONTAINS
     INTEGER, INTENT(in) :: nsp 
     CHARACTER(LEN = 6), INTENT(in) :: atm(:)
     !
-    INTEGER, INTENT(out)  :: nat, ibrav
+    INTEGER, INTENT(out)  :: nat, ibrav, natomwfc
     REAL(dp), INTENT(out) :: alat, a1(:), a2(:), a3(:)
     INTEGER, INTENT(inout),  ALLOCATABLE :: ityp(:)
     REAL(dp), INTENT(inout), ALLOCATABLE :: tau(:,:)
@@ -146,6 +163,11 @@ CONTAINS
     INTEGER :: iat, idx, isp
     !
     nat = atomic_structure%nat 
+    IF ( atomic_structure%num_of_atomic_wfc_ispresent ) THEN 
+      natomwfc = atomic_structure%num_of_atomic_wfc
+    ELSE 
+      natomwfc = 0 
+    END IF   
     alat = atomic_structure%alat 
     IF ( atomic_structure%bravais_index_ispresent ) THEN 
        ibrav = atomic_structure%bravais_index 
@@ -207,7 +229,7 @@ CONTAINS
   !------------------------------------------------------------------------
   SUBROUTINE qexsd_copy_symmetry ( symms_obj, spacegroup, &
        nsym, nrot, s, ft, sname, t_rev, invsym, irt, &
-       noinv, nosym, no_t_rev, flags_obj )
+       noinv, nosym, no_t_rev, colin_mag, flags_obj)
     !------------------------------------------------------------------------
     ! 
     USE qes_types_module,ONLY : symmetries_type, symmetry_flags_type
@@ -224,6 +246,7 @@ CONTAINS
     REAL(dp), INTENT(OUT):: ft(:,:)
     INTEGER, INTENT(OUT) :: irt(:,:)
     INTEGER, INTENT(OUT) :: t_rev(:)
+    INTEGER, INTENT(OUT) :: colin_mag
     CHARACTER(len=45) ::  sname(:)
     !
     LOGICAL, INTENT(OUT) :: noinv, nosym, no_t_rev
@@ -243,6 +266,11 @@ CONTAINS
     spacegroup = symms_obj%space_group
     nrot = symms_obj%nrot 
     nsym = symms_obj%nsym
+    IF (symms_obj%colin_mag_ispresent) THEN 
+      colin_mag = symms_obj%colin_mag 
+    ELSE 
+      colin_mag = -1 
+    END IF 
     !  
     invsym = .FALSE. 
     DO isym = 1, nrot
@@ -301,7 +329,7 @@ CONTAINS
     npw_g     = basis_set%npwx
     !
     b1 =  basis_set%reciprocal_lattice%b1
-   !  b2 =  basis_set%reciprocal_lattice%b2
+    b2 =  basis_set%reciprocal_lattice%b2
     b3 =  basis_set%reciprocal_lattice%b3
     !
   END SUBROUTINE qexsd_copy_basis_set
@@ -310,9 +338,9 @@ CONTAINS
   SUBROUTINE qexsd_copy_dft ( dft_obj, nsp, atm, &
        dft_name, nq1, nq2, nq3, ecutfock, exx_fraction, screening_parameter, &
        exxdiv_treatment, x_gamma_extrapolation, ecutvcut, local_thr, &
-       lda_plus_U, lda_plus_U_kind, U_projection, Hubbard_n, Hubbard_l, Hubbard_lmax, Hubbard_occ, &
+       lda_plus_U, apply_u, lda_plus_U_kind, U_projection, Hubbard_n, Hubbard_l, Hubbard_lmax, Hubbard_occ, &
        Hubbard_n2, Hubbard_l2, Hubbard_n3, Hubbard_l3, backall, Hubbard_lmax_back, Hubbard_alpha_back, &
-       Hubbard_U, Hubbard_U2, Hubbard_J0, Hubbard_alpha, Hubbard_beta, Hubbard_J, Hubbard_V, &
+       Hubbard_U, Hubbard_Um, Hubbard_U2, Hubbard_J0, Hubbard_alpha, Hubbard_alpha_m, Hubbard_beta, Hubbard_J, Hubbard_V, &
        vdw_corr, dftd3_version, dftd3_3body, scal6, lon_rcut, vdw_isolated )
     !-------------------------------------------------------------------
     ! 
@@ -333,15 +361,16 @@ CONTAINS
     INTEGER, INTENT(inout) :: nq1, nq2, nq3
     LOGICAL, INTENT(inout) :: x_gamma_extrapolation
     !
-    LOGICAL, INTENT(out) :: lda_plus_U
+    LOGICAL, INTENT(out) :: lda_plus_U, apply_u
     INTEGER, INTENT(inout) :: lda_plus_U_kind, Hubbard_lmax, Hubbard_lmax_back
     CHARACTER(LEN=*), INTENT(inout) :: U_projection
     INTEGER, INTENT(inout) :: Hubbard_n(:), Hubbard_l(:), Hubbard_n2(:), Hubbard_l2(:), Hubbard_n3(:), Hubbard_l3(:) 
     REAL(dp), INTENT(inout) :: Hubbard_U(:), Hubbard_U2(:), Hubbard_J0(:), Hubbard_J(:,:), Hubbard_V(:,:,:), &
-                               Hubbard_alpha(:), Hubbard_alpha_back(:), Hubbard_beta(:), Hubbard_occ(:,:)
+                               Hubbard_alpha(:), Hubbard_alpha_back(:), Hubbard_beta(:), Hubbard_occ(:,:),   & 
+                               Hubbard_Um(:,:,:), Hubbard_alpha_m(:,:,:) 
     LOGICAL, INTENT(inout) :: backall(:)
     OPTIONAL    :: Hubbard_U2, Hubbard_n2, Hubbard_l2, Hubbard_lmax_back, Hubbard_alpha_back, &
-                   Hubbard_l3
+                   Hubbard_l3, Hubbard_Um
     !
     CHARACTER(LEN=*), INTENT(out) :: vdw_corr
     LOGICAL,INTENT(inout)   :: dftd3_3body 
@@ -351,7 +380,7 @@ CONTAINS
     !
     CHARACTER(LEN=256 ) :: label
     CHARACTER(LEN=3 )   :: symbol
-    INTEGER :: ihub, isp, hu_n, hu_l, idx1, idx2, idx3, ich
+    INTEGER :: ihub, isp, hu_n, hu_l, idx1, idx2, idx3, ich, im, ispin, objldim
     !
     dft_name = TRIM(dft_obj%functional)
     IF ( dft_obj%hybrid_ispresent ) THEN
@@ -375,6 +404,7 @@ CONTAINS
     IF ( lda_plus_u ) THEN 
        Hubbard_U  = 0.0_DP
        Hubbard_U2 = 0.0_DP
+       Hubbard_Um = 0.0_DP
        Hubbard_alpha = 0.0_DP
        Hubbard_alpha_back = 0.0_DP
        Hubbard_J = 0.0_DP
@@ -389,6 +419,9 @@ CONTAINS
        Hubbard_l2 =-1 
        Hubbard_l3 =-1 
        backall = .false.
+       !FIXME read and write of Hubbard_alpha_m from XML not yet implemented, temporarily 
+       ! we just set it to 0 not to break other cases 
+       Hubbard_alpha_m = 0.0_DP
        !
        IF ( dft_obj%dftU%Hubbard_U_ispresent) THEN 
           loop_on_hubbardU:DO ihub =1, dft_obj%dftU%ndim_Hubbard_U
@@ -410,6 +443,43 @@ CONTAINS
           END DO loop_on_hubbardU
        END IF 
        ! 
+       Hubbard_Um = 0.0_dp
+       IF ( dft_obj%dftU%Hubbard_Um_ispresent) THEN 
+          apply_u = .TRUE. 
+          loop_on_hubbardUm:DO ihub =1, dft_obj%dftU%ndim_Hubbard_Um
+             symbol = TRIM(dft_obj%dftU%Hubbard_Um(ihub)%specie)
+             label  = TRIM(dft_obj%dftU%Hubbard_Um(ihub)%label )  
+             IF (dft_obj%dftU%Hubbard_Um(ihub)%spin_ispresent) THEN
+                     ispin = dft_obj%dftU%Hubbard_Um(ihub)%spin
+             ELSE 
+                     ispin = 1
+             END IF
+             loop_on_speciesUm:DO isp = 1, nsp
+                IF ( TRIM(symbol) == TRIM ( atm(isp) ) ) THEN 
+                  READ (label(1:1),'(i1)', END=14, ERR=15) hu_n
+                  hu_l = spdf_to_l( label(2:2) )
+                  Hubbard_n(isp) = hu_n
+                  Hubbard_l(isp) = hu_l
+                  objldim = dft_obj%dftU%Hubbard_Um(ihub)%size 
+                  IF (objldim == 2*hu_l + 1)  THEN 
+                    Hubbard_Um(1:2*hu_l+1,ispin,isp) = dft_obj%dftU%Hubbard_Um(ihub)%HubbardM 
+                  ELSE IF (objldim == 2*(2*hu_l +1)) THEN 
+                    Hubbard_Um(1:2*hu_l+1,1,isp) = dft_obj%dftU%Hubbard_Um(ihub)%HubbardM(1:2*hu_l+1)
+                    Hubbard_Um(1:2*hu_l+1,2,isp) = dft_obj%dftU%Hubbard_Um(ihub)%HubbardM(2*hu_l+2:4*hu_l+2)
+                  ELSE 
+                    call errore("qexsd_copy_dft:", & 
+                       "size of Hubbard_Um element not compatible with label",1) 
+                  END IF  
+                  IF (Hubbard_n(isp)<0 .OR. Hubbard_l(isp)<0) &
+                        CALL errore ("qexsd_copy_dft:", &
+                            &"Problem while reading Hubbard_n and/or Hubbard_l", 1 )
+                  EXIT loop_on_speciesUm
+                END IF 
+             END DO loop_on_speciesUm
+          END DO loop_on_hubbardUm
+       END IF 
+
+       !
        IF ( dft_obj%dftU%Hubbard_back_ispresent) THEN
           loop_hubbardBack:DO ihub =1, dft_obj%dftU%ndim_Hubbard_back
             symbol = TRIM(dft_obj%dftU%Hubbard_back(ihub)%species)
@@ -584,7 +654,7 @@ CONTAINS
     !
     !------------------------------------------------------------------------
     SUBROUTINE qexsd_copy_band_structure( band_struct_obj, lsda, nkstot, &
-         isk, natomwfc, nbnd, nbnd_up, nbnd_dw, nelec, xk, wk, wg, &
+         isk, nbnd, nbnd_up, nbnd_dw, nelec, xk, wk, wg, &
          ef, ef_up, ef_dw, et )
       !------------------------------------------------------------------------
       !
@@ -595,7 +665,7 @@ CONTAINS
       IMPLICIT NONE
       TYPE ( band_structure_type)         :: band_struct_obj
       LOGICAL, INTENT(out) :: lsda
-      INTEGER, INTENT(out) :: nkstot, natomwfc, nbnd, nbnd_up, nbnd_dw, &
+      INTEGER, INTENT(out) :: nkstot, nbnd, nbnd_up, nbnd_dw, &
               isk(:)
       REAL(dp), INTENT(out):: nelec, ef, ef_up, ef_dw, xk(:,:), wk(:)
       REAL(dp), INTENT(inout), ALLOCATABLE ::  wg(:,:), et(:,:)
@@ -604,8 +674,7 @@ CONTAINS
       INTEGER :: ik
       ! 
       lsda = band_struct_obj%lsda
-      nkstot = band_struct_obj%nks 
-      natomwfc = band_struct_obj%num_of_atomic_wfc
+      nkstot = band_struct_obj%nks  
       !
       IF ( lsda) THEN
          !
@@ -654,6 +723,7 @@ CONTAINS
            nelec, ef, two_fermi_energies, ef_up, ef_dw )
       !
       IF ( .NOT. ALLOCATED(et) ) ALLOCATE( et(nbnd,nkstot) )
+      !$acc enter data create(et)
       IF ( .NOT. ALLOCATED(wg) ) ALLOCATE( wg(nbnd,nkstot) )
       !
       DO ik =1, band_struct_obj%ndim_ks_energies
@@ -677,6 +747,7 @@ CONTAINS
          END IF
          !
       END DO
+      !$acc update device(et)
       !
     END SUBROUTINE qexsd_copy_band_structure
     !
@@ -748,6 +819,27 @@ CONTAINS
       !
     END SUBROUTINE qexsd_copy_algorithmic_info
     !-----------------------------------------------------------------------
+    !-----------------------------------------------------------------------
+    SUBROUTINE qexsd_copy_twochem ( two_chem_obj, &
+         twochem, nbnd_cond, nelec_cond, degauss_cond, ef_cond)
+      USE qes_types_module, ONLY: two_chem_type
+      IMPLICIT NONE 
+      TYPE(two_chem_type),INTENT(IN)     ::  two_chem_obj
+      LOGICAL,INTENT(OUT)               ::  twochem
+      REAL(DP), INTENT(OUT)             ::  degauss_cond
+      REAL(DP), INTENT(OUT)             ::  nelec_cond
+      INTEGER, INTENT(OUT)              ::  nbnd_cond
+      REAL(DP),OPTIONAL, INTENT(OUT)    :: ef_cond
+      !
+      twochem = two_chem_obj%twochem
+      degauss_cond = two_chem_obj%degauss_cond
+      nelec_cond = two_chem_obj%nelec_cond
+      nbnd_cond = two_chem_obj%nbnd_cond
+      IF (PRESENT(ef_cond)) ef_cond = two_chem_obj%ef_cond 
+      !
+    END SUBROUTINE qexsd_copy_twochem
+    !-----------------------------------------------------------------------
+
     !
     !---------------------------------------------------------------------------
     SUBROUTINE qexsd_copy_efield ( efield_obj, tefield, dipfield, edir, &
@@ -906,7 +998,29 @@ CONTAINS
        ! 
      END SUBROUTINE qexsd_copy_kpoints
      !
-
+  !
+  !---------------------------------------------------------------
+  SUBROUTINE qexsd_copy_esm( pbc_obj, bc, nfit, w, efield, a) 
+    !------------------------------------------------------------
+    USE qes_types_module, ONLY: outputPBC_type 
+    IMPLICIT NONE 
+    TYPE(outputPBC_type),INTENT(IN) :: pbc_obj 
+    CHARACTER(LEN=3),INTENT(OUT)    :: bc 
+    INTEGER,INTENT(OUT)             :: nfit 
+    REAL(DP),INTENT(OUT)             :: w 
+    REAL(DP),INTENT(OUT)             :: efield
+    REAL(DP),INTENT(OUT)             :: a 
+    ! 
+    IF (pbc_obj%esm_ispresent) THEN 
+      bc = TRIM(pbc_obj%esm%bc) 
+      nfit = pbc_obj%esm%nfit 
+      w = pbc_obj%esm%w 
+      efield = pbc_obj%esm%efield
+      a = pbc_obj%esm%a 
+    ELSE 
+      CALL errore("qexsd_copy_esm","esm object not present in input", 1) 
+    END IF 
+  END SUBROUTINE qexsd_copy_esm 
   !
   !---------------------------------------------------------------------------
   SUBROUTINE qexsd_copy_rism3d( rism3d_obj, pseudo_dir, nsolV, solVs, molfile, ecutsolv )

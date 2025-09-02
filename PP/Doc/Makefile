@@ -9,7 +9,6 @@ HTMLS = INPUT_BAND_INTERPOLATION.html \
 	INPUT_bgw2pw.html \
 	INPUT_D3HESS.html \
 	INPUT_DOS.html \
-	INPUT_IMPORTEXPORT_BINARY.html \
 	INPUT_molecularpdos.html \
 	INPUT_OSCDFT_ET.html \
 	INPUT_OSCDFT_PP.html \
@@ -19,7 +18,8 @@ HTMLS = INPUT_BAND_INTERPOLATION.html \
 	INPUT_PROJWFC.html \
 	INPUT_pw2bgw.html \
 	INPUT_pw2gw.html \
-	INPUT_pw2wannier90.html
+	INPUT_pw2wannier90.html \
+	INPUT_wannier2pw.html
 
 PDFS = eps_man.pdf user_guide.pdf
 AUXS = $(PDFS:.pdf=.aux)

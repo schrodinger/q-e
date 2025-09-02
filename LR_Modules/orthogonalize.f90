@@ -29,10 +29,11 @@ SUBROUTINE orthogonalize(dvpsi, evq, ikk, ikq, dpsi, npwq, dpsi_computed)
   ! throughout the whole calculation (e.g., as in TDDFPT for k=0). 
   !
   USE kinds,            ONLY : DP
-  USE klist,            ONLY : lgauss, degauss, ngauss, ltetra, wk
+  USE klist,            ONLY : lgauss, degauss, ngauss, ltetra, wk, &
+                               degauss_cond, nelec_cond
   USE noncollin_module, ONLY : noncolin, npol
-  USE wvfct,            ONLY : npwx, nbnd, wg, et
-  USE ener,             ONLY : ef
+  USE wvfct,            ONLY : npwx, nbnd, wg, et, nbnd_cond
+  USE ener,             ONLY : ef, ef_cond
   USE becmod,           ONLY : bec_type, becp, calbec
   USE uspp,             ONLY : vkb, okvan
   USE mp_bands,         ONLY : use_bgrp_in_hpsi, inter_bgrp_comm, intra_bgrp_comm
@@ -42,9 +43,7 @@ SUBROUTINE orthogonalize(dvpsi, evq, ikk, ikq, dpsi, npwq, dpsi_computed)
   USE gvect,            ONLY : gstart
   USE control_lr,       ONLY : alpha_pv, nbnd_occ
   USE dfpt_tetra_mod,   ONLY : dfpt_tetra_beta
-#if defined(__CUDA)
-  USE cublas
-#endif
+  USE two_chem,         ONLY : twochem
   !
   IMPLICIT NONE
   INTEGER, INTENT(IN) :: ikk, ikq   ! the index of the k and k+q points
@@ -69,7 +68,7 @@ SUBROUTINE orthogonalize(dvpsi, evq, ikk, ikq, dpsi, npwq, dpsi_computed)
   !
   ALLOCATE(ps(nbnd,nbnd))
   !
-  !$acc data copyin(evq) copy(dvpsi,dpsi) create(ps(1:nbnd, 1:nbnd), ps_r(1:nbnd, 1:nbnd))
+  !$acc data present_or_copyin(evq) present_or_copy(dvpsi,dpsi) create(ps(1:nbnd, 1:nbnd), ps_r(1:nbnd, 1:nbnd))
   IF (gamma_only) THEN
      !$acc kernels
      ps_r(:,:) = 0.0d0
@@ -88,10 +87,10 @@ SUBROUTINE orthogonalize(dvpsi, evq, ikk, ikq, dpsi, npwq, dpsi_computed)
      !
      !$acc host_data use_device(evq, dvpsi, ps)
      IF (noncolin) THEN
-        CALL zgemm( 'C', 'N', nbnd, nbnd_occ (ikk), npwx*npol, (1.d0,0.d0), &
+        CALL myzgemm( 'C', 'N', nbnd, nbnd_occ (ikk), npwx*npol, (1.d0,0.d0), &
              evq, npwx*npol, dvpsi, npwx*npol, (0.d0,0.d0), ps, nbnd )
      ELSE
-        CALL zgemm( 'C', 'N', nbnd, nbnd_occ (ikk), npwq, (1.d0,0.d0), &
+        CALL myzgemm( 'C', 'N', nbnd, nbnd_occ (ikk), npwq, (1.d0,0.d0), &
              evq, npwx, dvpsi, npwx, (0.d0,0.d0), ps, nbnd )
      END IF
      !$acc end host_data
@@ -100,10 +99,34 @@ SUBROUTINE orthogonalize(dvpsi, evq, ikk, ikq, dpsi, npwq, dpsi_computed)
         !
         IF ( lgauss ) THEN
            !
-           wg1 = wgauss ((ef-et(ibnd,ikk)) / degauss, ngauss)
-           w0g = w0gauss((ef-et(ibnd,ikk)) / degauss, ngauss) / degauss
+           IF ( twochem ) THEN
+                   ! 
+                   ! twochem case
+                   !
+                   IF (ibnd.LE.(nbnd-nbnd_cond)) THEN
+                        !
+                        w0g = w0gauss((ef-et(ibnd,ikk)) / degauss, ngauss) / degauss
+                        wg1 = wgauss ( (ef - et (ibnd, ikk) ) / degauss, ngauss)
+                   ELSE
+                        w0g = w0gauss((ef_cond-et(ibnd,ikk)) / degauss_cond, ngauss)&
+                                / degauss_cond
+                        wg1 = wgauss ( (ef_cond - et (ibnd, ikk) ) / degauss_cond, ngauss)
+                   END IF
+           ELSE 
+                   wg1 = wgauss ((ef-et(ibnd,ikk)) / degauss, ngauss)
+                   w0g = w0gauss((ef-et(ibnd,ikk)) / degauss, ngauss) / degauss
+           END IF
            DO jbnd = 1, nbnd
+              !
+              if (twochem) then
+                      if (jbnd.le.nbnd-nbnd_cond) then
+                        wgp = wgauss ( (ef - et (jbnd, ikq) ) / degauss, ngauss)
+                      else
+                        wgp = wgauss ( (ef_cond - et (jbnd, ikq) ) / degauss_cond, ngauss)
+                      end if
+              else
               wgp = wgauss ( (ef - et (jbnd, ikq) ) / degauss, ngauss)
+              end if
               deltae = et (jbnd, ikq) - et (ibnd, ikk)
               theta = wgauss (deltae / degauss, 0)
               wwg(jbnd) = wg1 * (1.d0 - theta) + wgp * theta
@@ -166,12 +189,12 @@ SUBROUTINE orthogonalize(dvpsi, evq, ikk, ikq, dpsi, npwq, dpsi_computed)
      !
      !$acc host_data use_device(evq, dvpsi, ps)
      IF (noncolin) THEN
-        CALL zgemm( 'C', 'N',nbnd_occ(ikq), nbnd_occ(ikk), npwx*npol, &
+        CALL myzgemm( 'C', 'N',nbnd_occ(ikq), nbnd_occ(ikk), npwx*npol, &
              (1.d0,0.d0), evq, npwx*npol, dvpsi, npwx*npol, &
              (0.d0,0.d0), ps, nbnd )
      ELSEIF (gamma_only) THEN
         !$acc host_data use_device(ps_r)
-        CALL dgemm( 'C', 'N', nbnd_occ(ikq), nbnd_occ (ikk), 2*npwq, &
+        CALL mydgemm( 'C', 'N', nbnd_occ(ikq), nbnd_occ (ikk), 2*npwq, &
              2.0_DP, evq, 2*npwx, dvpsi, 2*npwx, &
              0.0_DP, ps_r, nbnd )
         IF (gstart == 2 ) THEN
@@ -180,7 +203,7 @@ SUBROUTINE orthogonalize(dvpsi, evq, ikk, ikq, dpsi, npwq, dpsi_computed)
         ENDIF
         !$acc end host_data
      ELSE
-        CALL zgemm( 'C', 'N', nbnd_occ(ikq), nbnd_occ (ikk), npwq, &
+        CALL myzgemm( 'C', 'N', nbnd_occ(ikq), nbnd_occ (ikk), npwq, &
              (1.d0,0.d0), evq, npwx, dvpsi, npwx, &
              (0.d0,0.d0), ps, nbnd )
      END IF
@@ -215,9 +238,7 @@ SUBROUTINE orthogonalize(dvpsi, evq, ikk, ikq, dpsi, npwq, dpsi_computed)
         end if
      end if
      !
-     !$acc host_data use_device(evq, dpsi)
      CALL s_psi_acc (npwx, npwq, nbnd_eff, evq, dpsi)
-     !$acc end host_data
      !
   ENDIF
   !
@@ -235,11 +256,11 @@ SUBROUTINE orthogonalize(dvpsi, evq, ikk, ikq, dpsi, npwq, dpsi_computed)
      !  metallic case
      !
      IF (noncolin) THEN
-        CALL zgemm( 'N', 'N', npwx*npol, nbnd_occ(ikk), nbnd, &
+        CALL myzgemm( 'N', 'N', npwx*npol, nbnd_occ(ikk), nbnd, &
              (1.d0,0.d0), dpsi, npwx*npol, ps, nbnd, (-1.0d0,0.d0), &
              dvpsi, npwx*npol )
      ELSE
-        CALL zgemm( 'N', 'N', npwq, nbnd_occ(ikk), nbnd, &
+        CALL myzgemm( 'N', 'N', npwq, nbnd_occ(ikk), nbnd, &
              (1.d0,0.d0), dpsi, npwx, ps, nbnd, (-1.0d0,0.d0), &
              dvpsi, npwx )
      END IF
@@ -249,15 +270,15 @@ SUBROUTINE orthogonalize(dvpsi, evq, ikk, ikq, dpsi, npwq, dpsi_computed)
      !  Insulators: note that nbnd_occ(ikk)=nbnd_occ(ikq) in an insulator
      !
      IF (noncolin) THEN
-        CALL zgemm( 'N', 'N', npwx*npol, nbnd_occ(ikk), nbnd_occ(ikk), &
+        CALL myzgemm( 'N', 'N', npwx*npol, nbnd_occ(ikk), nbnd_occ(ikk), &
              (1.d0,0.d0),dpsi,npwx*npol,ps,nbnd,(-1.0d0,0.d0), &
              dvpsi, npwx*npol )
      ELSEIF (gamma_only) THEN             
-        CALL ZGEMM( 'N', 'N', npwq, nbnd_occ(ikk), nbnd_occ(ikk), &
+        CALL myzgemm( 'N', 'N', npwq, nbnd_occ(ikk), nbnd_occ(ikk), &
              (1.d0,0.d0), dpsi, npwx, ps, nbnd, (-1.0d0,0.d0), &
              dvpsi, npwx )
      ELSE
-        CALL zgemm( 'N', 'N', npwq, nbnd_occ(ikk), nbnd_occ(ikk), &
+        CALL myzgemm( 'N', 'N', npwq, nbnd_occ(ikk), nbnd_occ(ikk), &
              (1.d0,0.d0), dpsi, npwx, ps, nbnd, (-1.0d0,0.d0), &
              dvpsi, npwx )
      END IF

@@ -93,6 +93,7 @@ subroutine print_clock_ph
      WRITE( stdout, * )
      call print_clock ('phqscf')
      call print_clock ('solve_linter')
+     call print_clock ('dfpt_kernel')
      call print_clock ('sth_kernel')
      call print_clock ('h_prec')
      call print_clock ('apply_dpot_b')
@@ -115,13 +116,17 @@ subroutine print_clock_ph
 
 #if defined(__MPI)
   call print_clock ('psymdvscf')
+  call print_clock ('psym_dmag')
 #else
   call print_clock ('symdvscf')
+  call print_clock ('sym_dmag')
 #endif
   call print_clock ('newdq')
   call print_clock ('adddvscf')
 
 
+  call print_clock ('com_dvloc')
+  call print_clock ('addcore')
   call print_clock ('drhodvus')
   WRITE( stdout, * )
   call print_clock ('dvqpsi_us')

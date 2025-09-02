@@ -22,9 +22,9 @@ SUBROUTINE hp_dealloc_q()
                                   & dvxc_s, vsgga, segni
   USE eqv,                 ONLY : dmuxc, dpsi, dvpsi, evq
   USE control_lr,          ONLY : lgamma, nbnd_occ
-  USE ldaU_lr,             ONLY : swfcatomk, swfcatomkpq
+  USE ldaU_lr,             ONLY : swfcatomk, swfcatomkpq, vh_u_save, vh_uv_save
   USE qpoint_aux,          ONLY : ikmks, ikmkmqs, becpt
-  USE hp_nc_mag_aux,       ONLY : deeq_nc_save 
+  USE lr_nc_mag,           ONLY : deeq_nc_save
   !
   IMPLICIT NONE
   INTEGER :: ik
@@ -32,6 +32,7 @@ SUBROUTINE hp_dealloc_q()
   IF (lgamma) THEN
      if (associated(evq))  nullify(evq)
   ELSE
+     !$acc exit data delete(evq)
      if (associated(evq))  deallocate(evq)
   ENDIF
   !
@@ -60,6 +61,9 @@ SUBROUTINE hp_dealloc_q()
       deallocate(becpt)
   endif
   if (allocated(deeq_nc_save)) deallocate(deeq_nc_save)
+  !
+  if (allocated(vh_u_save))     deallocate (vh_u_save)
+  if (allocated(vh_uv_save))    deallocate (vh_uv_save)
   !
   ! GGA-specific arrays
   !

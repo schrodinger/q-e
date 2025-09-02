@@ -34,6 +34,7 @@ set(sources
     smallgq.f90
     lr_sm1_psi.f90
     lr_addusddens.f90
+    lr_two_chem.f90
     localdos.f90
     setup_dgc.f90
     compute_vsgga.f90
@@ -51,12 +52,17 @@ set(sources
     lrcom.f90
     lr_dot.f90
     lr_dot_magnons.f90
+    lr_nc_mag.f90
     lanczos_pseudohermitian.f90
     lanczos_nonhermitian.f90
     lanczos_pseudohermitian_c.f90
     lanczos_nonhermitian_c.f90
     set_kplusq_nc.f90
     lr_sym_mod.f90
+    sym_def.f90
+    psymdvscf.f90
+    symdvscf.f90
+    sym_dmag.f90
     ccg_psi.f90
     ccgsolve_all.f90
     ch_psi_all_complex.f90

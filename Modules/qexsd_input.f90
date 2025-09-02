@@ -50,7 +50,8 @@ MODULE qexsd_input
        qexsd_init_electric_field_input, &
        qexsd_init_atomic_constraints, &
        qexsd_init_occupations, &
-       qexsd_init_smearing
+       qexsd_init_smearing,&
+       qexsd_init_twochem
   !
   CONTAINS
   !--------------------------------------------------------------------------------------------------------------------  
@@ -65,7 +66,7 @@ MODULE qexsd_input
                                           pseudo_dir,outdir,disk_io,verbosity
   LOGICAL,INTENT(IN)                   :: stress,forces,wf_collect,fcp,rism
   REAL(DP),INTENT(IN)                  :: max_seconds,etot_conv_thr,forc_conv_thr,&
-                                          press_conv_thr   
+                                          press_conv_thr
   INTEGER,INTENT(IN)                   :: iprint, nstep
   OPTIONAL                             :: nstep
   !
@@ -94,7 +95,7 @@ MODULE qexsd_input
                                   verbosity=TRIM(verbosity_value),stress=stress,forces=forces,    &
                                   wf_collect=wf_collect,max_seconds=int_max_seconds,  &
                                   etot_conv_thr=etot_conv_thr,forc_conv_thr=forc_conv_thr, &
-                                  press_conv_thr=press_conv_thr,print_every=iprint, fcp=fcp,rism=rism, &
+                                  press_conv_thr=press_conv_thr,print_every=iprint, fcp=fcp,rism=rism,&
                                   NSTEP = nstep)
 
   END SUBROUTINE qexsd_init_control_variables
@@ -152,12 +153,12 @@ MODULE qexsd_input
      END SELECT
      ALLOCATE (inpOcc_objs(inpOcc_size))
      IF ( inpOcc_size .GT. 1) THEN
-        CALL qes_init ( inpOcc_objs(1),"input_occupations", ISPIN = 1, &
+        CALL qes_init ( inpOcc_objs(1),"inputOccupations", ISPIN = 1, &
                   SPIN_FACTOR = 1._DP, INPUTOCCUPATIONS = input_occupations(1:nbnd) )
-        CALL qes_init ( inpOcc_objs(2),"input_occupations", 2, &
+        CALL qes_init ( inpOcc_objs(2),"inputOccupations", 2, &
                   SPIN_FACTOR = 1._DP , INPUTOCCUPATIONS = input_occupations_minority(1:nbnd))
      ELSE
-        CALL qes_init ( inpOcc_objs(1),"input_occupations", ISPIN = 1, SPIN_FACTOR = 2._DP , &
+        CALL qes_init ( inpOcc_objs(1),"inputOccupations", ISPIN = 1, SPIN_FACTOR = 2._DP , &
                                                                  INPUTOCCUPATIONS = input_occupations(1:nbnd) )
      END IF
   END IF
@@ -226,7 +227,7 @@ MODULE qexsd_input
                                           conv_thr, mixing_ndim, exx_nstep, max_nstep, tqr, real_space, &
                                           tq_smoothing, tbeta_smoothing, & 
                                           diago_thr_init, diago_full_acc, &
-                                          diago_cg_maxiter, diago_ppcg_maxiter, diago_david_ndim, &
+                                          diago_cg_maxiter, diago_david_ndim, &
                                           diago_rmm_ndim, diago_rmm_conv, diago_gs_nblock)
   !-------------------------------------------------------------------------------------------
   !
@@ -236,7 +237,7 @@ MODULE qexsd_input
   CHARACTER(LEN=*),INTENT(IN)             :: diagonalization,mixing_mode
   REAL(DP),INTENT(IN)                     :: mixing_beta, conv_thr, diago_thr_init
   INTEGER,INTENT(IN)                      :: mixing_ndim,exx_nstep, max_nstep, diago_cg_maxiter, &
-                                             diago_ppcg_maxiter, diago_david_ndim, &
+                                             diago_david_ndim, &
 
                                              diago_rmm_ndim, diago_gs_nblock
   LOGICAL,OPTIONAL,INTENT(IN)             :: diago_full_acc,tqr, real_space, tq_smoothing, tbeta_smoothing, &
@@ -250,7 +251,6 @@ MODULE qexsd_input
                                 TQ_SMOOTHING= tq_smoothing, TBETA_SMOOTHING = tbeta_smoothing,& 
                                 REAL_SPACE_Q=tqr, REAL_SPACE_BETA = real_space, DIAGO_THR_INIT=diago_thr_init,& 
                                 DIAGO_FULL_ACC=diago_full_acc,DIAGO_CG_MAXITER=diago_cg_maxiter, &
-                                DIAGO_PPCG_MAXITER=diago_ppcg_maxiter, &
                                 DIAGO_RMM_NDIM=diago_rmm_ndim, DIAGO_RMM_CONV=diago_rmm_conv, &
                                 DIAGO_GS_NBLOCK=diago_gs_nblock)
    !
@@ -870,5 +870,20 @@ MODULE qexsd_input
       END SUBROUTINE qexsd_init_smearing
       !--------------------------------------------------------------------------------------------
       !
+      !-----------------------------------------------------------------------------------
+      SUBROUTINE qexsd_init_twochem(obj, tagname, twochem,nbnd_cond,degauss_cond,nelec_cond,ef_cond) 
+      !--------------------------------------------------------------------------------
+      !
+      IMPLICIT NONE
+      TYPE (two_chem_type),INTENT(INOUT)      :: obj;
+      CHARACTER(LEN=*),INTENT(IN)            :: tagname
+      LOGICAL,INTENT(IN)                      :: twochem
+      REAL(DP)                                :: degauss_cond,nelec_cond
+      INTEGER,INTENT(IN)                      :: nbnd_cond
+      REAL(DP),OPTIONAL,INTENT(IN)            :: ef_cond
+      ! 
+      call qes_init (obj, TRIM(tagname), twochem, nbnd_cond, degauss_cond, nelec_cond, ef_cond)
+      END SUBROUTINE qexsd_init_twochem
+!
 END MODULE qexsd_input          
   

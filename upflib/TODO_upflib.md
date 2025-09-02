@@ -47,7 +47,7 @@
   - set the correct value of nsp in uspp_param when allocate_uspp is called,
     use it ONLY inside upflib, remove link of nsp in ions_base to uspp_param
 
-  - nh(:) is allocated in init_uspp_dims, but maybe it should allocated
+  - nh(:) is allocated in init_uspp_dims, but maybe it should be allocated
     together with upf(:), when upf is read. Or even better (but annoying
     to do): nh should be part of upf, since it is an atomic quantity?
 

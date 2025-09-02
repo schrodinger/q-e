@@ -25,10 +25,10 @@ subroutine hp_allocate_q
   USE lrus,                 ONLY : becp1
   USE eqv,                  ONLY : dpsi, evq, dmuxc, dvpsi
   USE control_lr,           ONLY : lgamma
-  USE ldaU,                 ONLY : Hubbard_lmax, nwfcU
-  USE ldaU_lr,              ONLY : swfcatomk, swfcatomkpq
+  USE ldaU,                 ONLY : Hubbard_lmax, nwfcU, lda_plus_u_kind, max_num_neighbors
+  USE ldaU_lr,              ONLY : swfcatomk, swfcatomkpq, vh_u_save, vh_uv_save
   USE qpoint_aux,           ONLY : becpt
-  USE hp_nc_mag_aux,        ONLY : deeq_nc_save 
+  USE lr_nc_mag,            ONLY : deeq_nc_save
   USE uspp_param,           ONLY : nhm 
   !
   IMPLICIT NONE
@@ -40,6 +40,7 @@ subroutine hp_allocate_q
   ELSE
      ! q/=0 : evq is allocated and calculated at point k+q
      ALLOCATE (evq(npwx*npol,nbnd))
+     !$acc enter data create(evq)
   ENDIF
   !
   ALLOCATE (dvpsi(npwx*npol,nbnd))
@@ -67,6 +68,12 @@ subroutine hp_allocate_q
      swfcatomkpq  => swfcatomk
   ELSE
      ALLOCATE (swfcatomkpq(npwx*npol,nwfcU))
+  ENDIF
+  !
+  IF (lda_plus_u_kind == 0) THEN
+     ALLOCATE (vh_u_save(2*Hubbard_lmax+1, 2*Hubbard_lmax+1, nspin, nat, 2))
+  ELSEIF (lda_plus_u_kind == 2) THEN
+     ALLOCATE (vh_uv_save(2*Hubbard_lmax+1, 2*Hubbard_lmax+1, max_num_neighbors, nat, nspin, 2))
   ENDIF
   !
   RETURN

@@ -63,6 +63,8 @@ type, public :: result_t
     complex(dp), allocatable :: modes_k(:, :, :)
     complex(dp), allocatable :: modes_k_single(:, :)
     real(dp), allocatable :: rpa_orders_k(:, :)
+    real(dp), allocatable :: alpha_0(:)
+    real(dp), allocatable :: C6(:)
 end type
 
 type, public :: atom_index_t
@@ -78,7 +80,9 @@ end type
 type, public :: clock_t
     !! Used for measuring performance.
     logical :: active = .true.
+    integer :: level = 0
     integer(i8), allocatable :: timestamps(:), counts(:)
+    integer, allocatable :: levels(:)
     contains
     procedure :: init => clock_init
     procedure :: clock => clock_clock
@@ -121,14 +125,14 @@ real(dp) pure function diff3(x, delta)
     real(dp), intent(in) :: x(-1:)
     real(dp), intent(in) :: delta
 
-    diff3 = (x(1)-x(-1))/(2*delta)
+    diff3 = (x(1) - x(-1)) / (2 * delta)
 end function
 
 real(dp) pure function diff5(x, delta)
     real(dp), intent(in) :: x(-2:)
     real(dp), intent(in) :: delta
 
-    diff5 = (1.d0/12*x(-2)-2.d0/3*x(-1)+2.d0/3*x(1)-1.d0/12*x(2))/delta
+    diff5 = (1.d0 / 12 * x(-2) - 2.d0 / 3 * x(-1) + 2.d0 / 3 * x(1) - 1.d0 / 12 * x(2)) / delta
 end function
 
 real(dp) pure function diff7(x, delta)
@@ -136,13 +140,13 @@ real(dp) pure function diff7(x, delta)
     real(dp), intent(in) :: delta
 
     diff7 = ( &
-        -1.d0/60*x(-3) &
-        + 3.d0/20*x(-2) &
-        - 3.d0/4*x(-1) &
-        + 3.d0/4*x(1) &
-        - 3.d0/20*x(2) &
-        + 1.d0/60*x(3) &
-    )/delta
+        -1.d0 / 60 * x(-3) &
+        + 3.d0 / 20 * x(-2) &
+        - 3.d0 / 4 * x(-1) &
+        + 3.d0 / 4 * x(1) &
+        - 3.d0 / 20 * x(2) &
+        + 1.d0 / 60 * x(3) &
+    ) / delta
 end function
 
 pure function lower(str)
@@ -154,7 +158,7 @@ pure function lower(str)
     do i = 1, len(str)
         select case (str(i:i))
             case ('A':'Z')
-                lower(i:i) = achar(iachar(str(i:i))+32)
+                lower(i:i) = achar(iachar(str(i:i)) + 32)
             case default
                 lower(i:i) = str(i:i)
         end select
@@ -182,7 +186,7 @@ subroutine shift_idx(idx, start, finish)
     integer :: i_dim, i
 
     do i_dim = size(idx), 1, -1
-        i = idx(i_dim)+1
+        i = idx(i_dim) + 1
         if (i <= finish(i_dim)) then
             idx(i_dim) = i
             return
@@ -198,6 +202,7 @@ subroutine clock_init(this, n)
 
     allocate (this%timestamps(n), source=0_i8)
     allocate (this%counts(n), source=0_i8)
+    allocate (this%levels(n), source=0)
 end subroutine
 
 subroutine clock_clock(this, id)
@@ -205,16 +210,19 @@ subroutine clock_clock(this, id)
     integer, intent(in) :: id
 
     integer(i8) :: cnt, rate, cnt_max
-    integer :: absid
+    integer :: id_
 
     if (.not. this%active) return
     call system_clock(cnt, rate, cnt_max)
+    id_ = abs(id)
     if (id > 0) then
-        this%timestamps(id) = this%timestamps(id) - cnt
+        this%timestamps(id_) = this%timestamps(id_) - cnt
+        this%levels(id_) = this%level
+        this%level = this%level + 1
     else
-        absid = abs(id)
-        this%timestamps(absid) = this%timestamps(absid) + cnt
-        this%counts(absid) = this%counts(absid)+1
+        this%timestamps(id_) = this%timestamps(id_) + cnt
+        this%counts(id_) = this%counts(id_) + 1
+        this%level = this%level - 1
     end if
 end subroutine
 
@@ -230,26 +238,35 @@ subroutine clock_print(this)
 #endif
     call system_clock(cnt, rate, cnt_max)
 
-    print '(A20,A10,A10)', 'id', 'count', 'time (s)'
+    print '(A5,A7,A20,A10,A16)', 'id', 'level', 'label', 'count', 'time (s)'
     do i = 1, size(this%counts)
         if (this%counts(i) == 0) cycle
         select case (i)
-        case (11); label = 'dipole real space'
-        case (12); label = 'dipole rec space'
-        case (13); label = 'dipole real 3x3'
-        case (21); label = 'eig MBD'
-        case (23); label = 'eig RPA'
-        case (24); label = 'eig RPA orders'
-        case (25); label = 'MBD forces'
-        case (32); label = 'inv SCS'
+        case (11); label = 'dipmat real'
+        case (12); label = 'dipmat rec'
+        case (13); label = 'P_EVR'
+        case (14); label = 'mmul'
+        case (15); label = 'force contractions'
+        case (16); label = 'PDGETRF'
+        case (17); label = 'PDGETRI'
+        case (18); label = 'ELSI ev'
+        case (20); label = 'MBD dipole'
+        case (21); label = 'MBD eig'
+        case (22); label = 'MBD forces'
+        case (23); label = 'RPA eig'
+        case (30); label = 'SCS dipole'
+        case (32); label = 'SCS inv'
+        case (33); label = 'SCS forces'
         case (50); label = 'SCS'
-        case (51); label = 'single k-point'
+        case (51); label = 'MBD k-point'
+        case (52); label = 'MBD'
         case (90); label = 'MBD@rsSCS'
         case (91); label = 'MBD@rsSCS forces'
         case default
-            label = '(' // trim(tostr(i)) // ')'
+            label = '('//trim(tostr(i))//')'
         end select
-        print '(A20,I10,F10.3)', label, this%counts(i), dble(this%timestamps(i))/rate
+        print '(I5,I7,"  ",A20,I10,F16.6)', i, this%levels(i), label, this%counts(i), &
+            dble(this%timestamps(i)) / rate
     end do
 end subroutine
 

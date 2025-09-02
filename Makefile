@@ -34,6 +34,7 @@ default :
 	@echo '  couple       Library interface for coupling to external codes'
 	@echo '  epw          Electron-Phonon Coupling with Wannier functions'
 	@echo '  kcw          KCW code: implementation of Koopmans functionals in primitive cell'
+	@echo '  pioud        Path Integral Molecular Dynamics with PIOUD algorithm'
 	@echo '  gui          Graphical User Interface'
 	@echo '  all          same as "make pwall cp ld1 tddfpt xspectra hp"'
 	@echo ' '
@@ -125,7 +126,7 @@ couple : pw cp
 	if test -d COUPLE ; then \
 	( cd COUPLE ; $(MAKE) TLDEPS= all || exit 1 ) ; fi
 
-epw: phlibs w90lib
+epw: phlibs w90lib pp
 	if test -d EPW ; then \
 	( cd EPW ; $(MAKE) all || exit 1; \
 		cd ../bin; ln -fs ../EPW/bin/epw.x . ); fi
@@ -141,6 +142,10 @@ travis : pwall epw
 kcw : pwlibs lrmods pp w90lib
 	if test -d KCW ; then \
 	( cd KCW ; $(MAKE) all || exit 1 ) ; fi
+
+pioud : pw pwlibs 
+	if test -d PIOUD ; then \
+	( cd PIOUD ; $(MAKE) all || exit 1 ) ; fi
 
 gui : bindir
 	@if test -d GUI/PWgui ; then \
@@ -163,7 +168,7 @@ gui : bindir
 
 pwall : pw neb ph pp pwcond acfdt
 
-all   : pwall cp ld1 tddfpt hp xspectra gwl kcw
+all   : pwall cp ld1 tddfpt hp xspectra gwl kcw pioud
 
 ###########################################################
 # Auxiliary targets used by main targets:
@@ -295,7 +300,7 @@ clean :
 		NEB ACFDT COUPLE GWW XSpectra PWCOND dft-d3 \
 		atomic LR_Modules upflib \
 		dev-tools extlibs Environ TDDFPT PHonon HP GWW Doc GUI \
-		QEHeat KCW \
+		QEHeat KCW PIOUD \
 	; do \
 	    if test -d $$dir ; then \
 		( cd $$dir ; \
@@ -312,7 +317,7 @@ veryclean : clean
 	- @(cd install ; $(MAKE) -f extlibs_makefile veryclean)
 	- (cd install ; rm -rf config.log configure.msg config.status \
 		configure.h make_wannier90.inc autom4te.cache )
-	- (cd include; rm -rf configure.in qe_cdefs.h )
+	- rm include/configure.h
 	- rm -f espresso.tar.gz
 	- rm -rf make.inc
 	- rm -rf FoX

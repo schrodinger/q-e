@@ -5,6 +5,7 @@ extern const _Bool cmbd_with_scalapack;
 extern const int cmbd_version_major;
 extern const int cmbd_version_minor;
 extern const int cmbd_version_patch;
+extern const char cmbd_version_suffix[30];
 
 struct geom_t* cmbd_init_geom(
     int n_atoms,
@@ -18,7 +19,8 @@ struct geom_t* cmbd_init_geom(
     _Bool get_spectrum,
     _Bool get_rpa_orders,
     _Bool rpa_rescale_eigs,
-    int max_atoms_per_block
+    int max_atoms_per_block,
+    double ewald_cutoff_scaling[2]
 );
 
 void cmbd_update_coords(struct geom_t* geom, double* coords);
@@ -45,11 +47,14 @@ struct cmbd_damping* cmbd_init_damping(
 
 void cmbd_destroy_damping(struct cmbd_damping* damping);
 
-double cmbd_ts_energy(
+void cmbd_print_timing(struct geom_t* geom);
+
+struct result_t* cmbd_ts_energy(
     struct geom_t* geom,
     double* alpha_0,
     double* C6,
-    struct cmbd_damping* damping
+    struct cmbd_damping* damping,
+    _Bool grad
 );
 
 struct result_t* cmbd_mbd_energy(
@@ -78,7 +83,9 @@ void cmbd_get_results(
     double* eigvecs,
     double* rpa_orders,
     double* eigvals_k,  // is actually complex double
-    double* eigvecs_k  // is actually complex double
+    double* eigvecs_k,  // is actually complex double
+    double* alpha_0,
+    double* C6
 );
 
 void cmbd_destroy_result(struct result_t* result);
@@ -114,4 +121,27 @@ double cmbd_dipole_energy(
     double beta,
     double a,
     double* C
+);
+
+double cmbd_nonint_density(
+    struct geom_t* geom,
+    int n_atoms,
+    int n_pts,
+    double* pts,
+    double* charges,
+    double* masses,
+    double* omegas,
+    double* rho
+);
+
+double cmbd_int_density(
+    struct geom_t* geom,
+    int n_atoms,
+    int n_pts,
+    double* pts,
+    double* charges,
+    double* masses,
+    double* omegas,
+    double* modes,
+    double* rho
 );

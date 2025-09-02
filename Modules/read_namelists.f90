@@ -121,6 +121,8 @@ MODULE read_namelists_module
        gate     = .FALSE. !TB
        twochem  = .FALSE.
        lberry   = .FALSE.
+       symmetry_with_labels = .FALSE. 
+       use_spinflip = .FALSE. 
        gdir     = 0
        nppstr   = 0
        wf_collect = .TRUE.
@@ -403,7 +405,6 @@ MODULE read_namelists_module
        diagonalization = 'david'
        diago_thr_init = 0.0_DP
        diago_cg_maxiter = 20
-       diago_ppcg_maxiter = 20
        diago_david_ndim = 2
        diago_rmm_ndim = 4
        diago_rmm_conv = .FALSE.
@@ -910,6 +911,8 @@ MODULE read_namelists_module
        CALL mp_bcast( gate,          ionode_id, intra_image_comm ) !TB
        CALL mp_bcast( twochem,       ionode_id, intra_image_comm )
        CALL mp_bcast( mbd_vdw,        ionode_id, intra_image_comm ) !GSz
+       CALL mp_bcast( symmetry_with_labels, ionode_id, intra_image_comm) 
+       CALL mp_bcast( use_spinflip, ionode_id, intra_image_comm) 
        !
        RETURN
        !
@@ -1160,7 +1163,6 @@ MODULE read_namelists_module
        CALL mp_bcast( diagonalization,      ionode_id, intra_image_comm )
        CALL mp_bcast( diago_thr_init,       ionode_id, intra_image_comm )
        CALL mp_bcast( diago_cg_maxiter,     ionode_id, intra_image_comm )
-       CALL mp_bcast( diago_ppcg_maxiter,   ionode_id, intra_image_comm )
        CALL mp_bcast( diago_david_ndim,     ionode_id, intra_image_comm )
        CALL mp_bcast( diago_rmm_ndim,       ionode_id, intra_image_comm )
        CALL mp_bcast( diago_rmm_conv,       ionode_id, intra_image_comm )

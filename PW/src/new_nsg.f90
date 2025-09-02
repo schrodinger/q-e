@@ -1,5 +1,5 @@
 !
-! Copyright (C) 2001-2023 Quantum ESPRESSO group
+! Copyright (C) 2001-2025 Quantum ESPRESSO group
 ! This file is distributed under the terms of the
 ! GNU General Public License. See the file `License'
 ! in the root directory of the present distribution,
@@ -24,28 +24,30 @@ SUBROUTINE new_nsg()
                                    ldim_u, ll, neighood, at_sc, nsgnew, phase_fac, &
                                    max_num_neighbors, Hubbard_l2, backall,     &
                                    offsetU, offsetU_back, offsetU_back1, is_hubbard_back
-  USE symm_base,            ONLY : d1, d2, d3
+  USE symm_base,            ONLY : d1, d2, d3, t_rev
   USE lsda_mod,             ONLY : lsda, current_spin, nspin, isk
   USE symm_base,            ONLY : nsym, irt
   USE wvfct,                ONLY : nbnd, npw, npwx, wg
   USE control_flags,        ONLY : gamma_only
   USE wavefunctions,        ONLY : evc
-  USE io_files,             ONLY : nwordwfc, iunwfc, nwordwfcU, iunsat, iunhub
+  USE io_files,             ONLY : nwordwfc, iunwfc, nwordwfcU, iunhub
   USE buffers,              ONLY : get_buffer
   USE mp_global,            ONLY : inter_pool_comm
   USE mp,                   ONLY : mp_sum
   USE mp_bands,             ONLY : intra_bgrp_comm
   USE becmod,               ONLY : bec_type, calbec, &
                                    allocate_bec_type, deallocate_bec_type
-  USE noncollin_module,     ONLY : npol
-  !
-  USE wavefunctions_gpum,   ONLY : using_evc
+  USE noncollin_module,     ONLY : npol, colin_mag
+#if defined (__OSCDFT)
+  USE plugin_flags,         ONLY : use_oscdft
+  USE oscdft_base,          ONLY : oscdft_ctx
+#endif 
   !
   IMPLICIT NONE
   !
   TYPE (bec_type) :: proj     
   ! proj(nwfcU,nbnd)
-  INTEGER :: ik, ibnd, is, i, na, nb, nt, isym, m1, m2, m11, m22, m0, m00, ldim,i_type
+  INTEGER :: ik, ibnd, is, i, na, nb, nt, isym, m1, m2, m11, m22, m0, m00, ldim,i_type, is2
   INTEGER :: na1, na2, viz, nt1, nt2, ldim1, ldim2, ldimb, nb1, nb2, viz_b
   INTEGER :: off, off1, off2, off3, eq_na2
   INTEGER :: ldim_std1, ldim_std2
@@ -55,8 +57,6 @@ SUBROUTINE new_nsg()
   INTEGER, EXTERNAL :: find_viz
   !
   CALL start_clock('new_nsg')
-  !
-  CALL using_evc(0)
   !
   ldim = 0
   DO nt = 1, ntyp
@@ -82,7 +82,6 @@ SUBROUTINE new_nsg()
      npw = ngk(ik)
      !
      IF (nks > 1) CALL get_buffer (evc, nwordwfc, iunwfc, ik)
-     IF (nks > 1) CALL using_evc(2)
      !
      ! make the projection
      !
@@ -219,6 +218,17 @@ SUBROUTINE new_nsg()
         ENDIF
      ENDDO
   ENDDO
+  !
+#if defined (__OSCDFT)
+  IF (use_oscdft .AND. (oscdft_ctx%inp%oscdft_type==2) .AND. &
+                  .NOT.oscdft_ctx%inp%constraint_diag) THEN
+     IF (.NOT.oscdft_ctx%conv) THEN
+        nsgnew(:,:,:,:,:) = nrg(:,:,:,:,:)
+        DEALLOCATE(nrg)
+        RETURN
+     ENDIF
+  ENDIF
+#endif
   ! 
   ! symmetrize the quantities nr -> ns
   !
@@ -292,6 +302,12 @@ SUBROUTINE new_nsg()
                           CALL symonpair(na1,na2,isym,nb1,nb2)
                           !
                           viz_b = find_viz(nb1,nb2)
+                          ! flip spin for time-reversal in collinear case
+                          IF ( (colin_mag == 2) .AND. (t_rev(isym) == 1) ) THEN
+                             is2 = 3 - is
+                          ELSE
+                             is2 = is
+                          ENDIF
                           ! 
                           DO m0 = off, off2
                              DO m00 = off1, off3
@@ -301,7 +317,7 @@ SUBROUTINE new_nsg()
                                      ll(m2,nt2).EQ.0) THEN
                                    nsgnew(m2,m1,viz,na1,is) = &
                                         nsgnew(m2,m1,viz,na1,is) +  &
-                                        nrg(m00,m0,viz_b,nb1,is) / nsym
+                                        nrg(m00,m0,viz_b,nb1,is2) / nsym
                                 ELSE IF (ll(m1,nt1).EQ.1 .AND. &
                                    m1.ge.off.and.m1.le.off2.and. &
                                    m2.ge.off1.and.m2.le.off3.and. &
@@ -309,7 +325,7 @@ SUBROUTINE new_nsg()
                                    nsgnew(m2,m1,viz,na1,is) = &
                                         nsgnew(m2,m1,viz,na1,is) +  &
                                         d1(m0-off+1,m1-off+1,isym) * &
-                                        nrg(m00,m0,viz_b,nb1,is) * &
+                                        nrg(m00,m0,viz_b,nb1,is2) * &
                                         1.d0 / nsym
                                 ELSE IF (ll(m1,nt1).EQ.2 .AND. &
                                    m1.ge.off.and.m1.le.off2.and. &
@@ -318,7 +334,7 @@ SUBROUTINE new_nsg()
                                    nsgnew(m2,m1,viz,na1,is) = &
                                         nsgnew(m2,m1,viz,na1,is) +  &
                                         d2(m0-off+1,m1-off+1,isym) * &
-                                        nrg(m00,m0,viz_b,nb1,is) * &
+                                        nrg(m00,m0,viz_b,nb1,is2) * &
                                         1.d0 / nsym
                                 ELSE IF (ll(m1,nt1).EQ.3 .AND. &
                                    m1.ge.off.and.m1.le.off2.and. &
@@ -327,7 +343,7 @@ SUBROUTINE new_nsg()
                                    nsgnew(m2,m1,viz,na1,is) = &
                                         nsgnew(m2,m1,viz,na1,is) +  &
                                         d3(m0-off+1,m1-off+1,isym) * &
-                                        nrg(m00,m0,viz_b,nb1,is) * &
+                                        nrg(m00,m0,viz_b,nb1,is2) * &
                                         1.d0 / nsym
 
                                 ELSE IF (ll(m1,nt1).EQ.0 .AND. &
@@ -336,7 +352,7 @@ SUBROUTINE new_nsg()
                                      ll(m2,nt2).EQ.1) THEN
                                    nsgnew(m2,m1,viz,na1,is) = &
                                         nsgnew(m2,m1,viz,na1,is) +  &
-                                        nrg(m00,m0,viz_b,nb1,is) * &
+                                        nrg(m00,m0,viz_b,nb1,is2) * &
                                         d1(m00-off1+1,m2-off1+1,isym) / nsym
                                 ELSE IF (ll(m1,nt1).EQ.1 .AND. &
                                    m1.ge.off.and.m1.le.off2.and. &
@@ -345,7 +361,7 @@ SUBROUTINE new_nsg()
                                    nsgnew(m2,m1,viz,na1,is) = &
                                         nsgnew(m2,m1,viz,na1,is) +  &
                                         d1(m0-off+1,m1-off+1,isym) * &
-                                        nrg(m00,m0,viz_b,nb1,is) * &
+                                        nrg(m00,m0,viz_b,nb1,is2) * &
                                         d1(m00-off1+1,m2-off1+1,isym) / nsym
                                 ELSE IF (ll(m1,nt1).EQ.2 .AND. &
                                    m1.ge.off.and.m1.le.off2.and. &
@@ -354,7 +370,7 @@ SUBROUTINE new_nsg()
                                    nsgnew(m2,m1,viz,na1,is) = &
                                         nsgnew(m2,m1,viz,na1,is) +  &
                                         d2(m0-off+1,m1-off+1,isym) * &
-                                        nrg(m00,m0,viz_b,nb1,is) * &
+                                        nrg(m00,m0,viz_b,nb1,is2) * &
                                         d1(m00-off1+1,m2-off1+1,isym) / nsym
                                 ELSE IF (ll(m1,nt1).EQ.3 .AND. &
                                    m1.ge.off.and.m1.le.off2.and. &
@@ -363,7 +379,7 @@ SUBROUTINE new_nsg()
                                    nsgnew(m2,m1,viz,na1,is) = &
                                         nsgnew(m2,m1,viz,na1,is) +  &
                                         d3(m0-off+1,m1-off+1,isym) * &
-                                        nrg(m00,m0,viz_b,nb1,is) * &
+                                        nrg(m00,m0,viz_b,nb1,is2) * &
                                         d1(m00-off1+1,m2-off1+1,isym) / nsym
 
                                 ELSE IF (ll(m1,nt1).EQ.0 .AND. &
@@ -372,7 +388,7 @@ SUBROUTINE new_nsg()
                                      ll(m2,nt2).EQ.2) THEN
                                    nsgnew(m2,m1,viz,na1,is) = &
                                         nsgnew(m2,m1,viz,na1,is) +  &
-                                        nrg(m00,m0,viz_b,nb1,is) * &
+                                        nrg(m00,m0,viz_b,nb1,is2) * &
                                         d2(m00-off1+1,m2-off1+1,isym) / nsym
                                 ELSE IF (ll(m1,nt1).EQ.1 .AND. &
                                    m1.ge.off.and.m1.le.off2.and. &
@@ -381,7 +397,7 @@ SUBROUTINE new_nsg()
                                    nsgnew(m2,m1,viz,na1,is) = &
                                         nsgnew(m2,m1,viz,na1,is) +  &
                                         d1(m0-off+1,m1-off+1,isym) * &
-                                        nrg(m00,m0,viz_b,nb1,is) * &
+                                        nrg(m00,m0,viz_b,nb1,is2) * &
                                         d2(m00-off1+1,m2-off1+1,isym) / nsym
                                 ELSE IF (ll(m1,nt1).EQ.2 .AND. &
                                    m1.ge.off.and.m1.le.off2.and. &
@@ -390,7 +406,7 @@ SUBROUTINE new_nsg()
                                    nsgnew(m2,m1,viz,na1,is) = &
                                         nsgnew(m2,m1,viz,na1,is) +  &
                                         d2(m0-off+1,m1-off+1,isym) * &
-                                        nrg(m00,m0,viz_b,nb1,is) * &
+                                        nrg(m00,m0,viz_b,nb1,is2) * &
                                         d2(m00-off1+1,m2-off1+1,isym) / nsym
                                 ELSE IF (ll(m1,nt1).EQ.3 .AND. &
                                    m1.ge.off.and.m1.le.off2.and. &
@@ -399,7 +415,7 @@ SUBROUTINE new_nsg()
                                    nsgnew(m2,m1,viz,na1,is) = &
                                         nsgnew(m2,m1,viz,na1,is) +  &
                                         d3(m0-off+1,m1-off+1,isym) * &
-                                        nrg(m00,m0,viz_b,nb1,is) * &
+                                        nrg(m00,m0,viz_b,nb1,is2) * &
                                         d2(m00-off1+1,m2-off1+1,isym) / nsym
 
                                 ELSE IF (ll(m1,nt1).EQ.0 .AND. &
@@ -408,7 +424,7 @@ SUBROUTINE new_nsg()
                                      ll(m2,nt2).EQ.3) THEN
                                    nsgnew(m2,m1,viz,na1,is) = &
                                         nsgnew(m2,m1,viz,na1,is) +  &
-                                        nrg(m00,m0,viz_b,nb1,is) * &
+                                        nrg(m00,m0,viz_b,nb1,is2) * &
                                         d3(m00-off1+1,m2-off1+1,isym) / nsym
                                 ELSE IF (ll(m1,nt1).EQ.1 .AND. &
                                    m1.ge.off.and.m1.le.off2.and. &
@@ -417,7 +433,7 @@ SUBROUTINE new_nsg()
                                    nsgnew(m2,m1,viz,na1,is) = &
                                         nsgnew(m2,m1,viz,na1,is) +  &
                                         d1(m0-off+1,m1-off+1,isym) * &
-                                        nrg(m00,m0,viz_b,nb1,is) * &
+                                        nrg(m00,m0,viz_b,nb1,is2) * &
                                         d3(m00-off1+1,m2-off1+1,isym) / nsym
                                 ELSE IF (ll(m1,nt1).EQ.2 .AND. &
                                    m1.ge.off.and.m1.le.off2.and. &
@@ -426,7 +442,7 @@ SUBROUTINE new_nsg()
                                    nsgnew(m2,m1,viz,na1,is) = &
                                         nsgnew(m2,m1,viz,na1,is) +  &
                                         d2(m0-off+1,m1-off+1,isym) * &
-                                        nrg(m00,m0,viz_b,nb1,is) * &
+                                        nrg(m00,m0,viz_b,nb1,is2) * &
                                         d3(m00-off1+1,m2-off1+1,isym) / nsym
                                 ELSE IF (ll(m1,nt1).EQ.3 .AND. &
                                    m1.ge.off.and.m1.le.off2.and. &
@@ -435,7 +451,7 @@ SUBROUTINE new_nsg()
                                    nsgnew(m2,m1,viz,na1,is) = &
                                         nsgnew(m2,m1,viz,na1,is) +  &
                                         d3(m0-off+1,m1-off+1,isym) * &
-                                     nrg(m00,m0,viz_b,nb1,is) * &
+                                        nrg(m00,m0,viz_b,nb1,is2) * &
                                         d3(m00-off1+1,m2-off1+1,isym) / nsym
                                 ELSE
                                    CALL errore ('new_nsg', &
@@ -493,7 +509,7 @@ SUBROUTINE new_nsg_nc()
    USE wvfct,                ONLY : nbnd, npw, npwx, wg
    USE control_flags,        ONLY : gamma_only
    USE wavefunctions,        ONLY : evc
-   USE io_files,             ONLY : nwordwfc, iunwfc, nwordwfcU, iunsat, iunhub
+   USE io_files,             ONLY : nwordwfc, iunwfc, nwordwfcU, iunhub
    USE buffers,              ONLY : get_buffer
    USE mp_global,            ONLY : inter_pool_comm
    USE mp,                   ONLY : mp_sum
@@ -501,8 +517,6 @@ SUBROUTINE new_nsg_nc()
    USE becmod,               ONLY : bec_type, calbec, &
                                     allocate_bec_type, deallocate_bec_type
    USE noncollin_module,     ONLY : npol, noncolin, domag, lspinorb
-   !
-   USE wavefunctions_gpum,   ONLY : using_evc
    !
    IMPLICIT NONE
    !
@@ -519,8 +533,6 @@ SUBROUTINE new_nsg_nc()
    INTEGER, EXTERNAL :: find_viz
    !
    CALL start_clock('new_nsg')
-   !
-   CALL using_evc(0)
    !
    ldim = 0
    DO nt = 1, ntyp
@@ -549,7 +561,6 @@ SUBROUTINE new_nsg_nc()
       npw = ngk(ik)
       !
       IF (nks > 1) CALL get_buffer (evc, nwordwfc, iunwfc, ik)
-      IF (nks > 1) CALL using_evc(2)
       !
       ! make the projection
       !

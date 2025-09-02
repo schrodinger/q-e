@@ -25,25 +25,26 @@
                                 ip_nqx3 => nqx3, ip_ecutfock => ecutfock, ip_ecutvcut => ecutvcut, localization_thr,  &
                                 screening_parameter, exx_fraction, x_gamma_extrapolation, exxdiv_treatment,           &
                                 ip_lda_plus_u=>lda_plus_u, ip_lda_plus_u_kind => lda_plus_u_kind,                     &
-                                ip_hubbard_u => hubbard_u, ip_hubbard_u2 => hubbard_u2,                               &
-                                ip_hubbard_j0 => hubbard_j0,  ip_hubbard_beta => hubbard_beta, ip_backall => backall, &
-                                ip_hubbard_n => hubbard_n, ip_hubbard_l => hubbard_l,                                 &
-                                ip_hubbard_n2 => hubbard_n2, ip_hubbard_l2 => hubbard_l2, ip_hubbard_l3 => hubbard_l3,&
-                                ip_hubbard_n3 => Hubbard_n3,ip_hubbard_alpha => hubbard_alpha,                        &
-                                ip_Hubbard_alpha_back => hubbard_alpha_back, ip_hubbard_j => hubbard_j,               &
-                                starting_ns_eigenvalue, ip_hubbard_projectors => hubbard_projectors,                  &
-                                ip_hubbard_v => Hubbard_V,                                                            &
+                                ip_hubbard_u => hubbard_u, ip_hubbard_u2 => hubbard_u2, ip_hubbard_Um => hubbard_um,  &
+                                ip_hubbard_Um_nc => hubbard_Um_nc, ip_hubbard_j0 => hubbard_j0,                       &
+                                ip_hubbard_beta => hubbard_beta, ip_backall => backall, ip_hubbard_n => hubbard_n,    &
+                                ip_hubbard_l => hubbard_l, ip_hubbard_n2 => hubbard_n2, ip_hubbard_l2 => hubbard_l2,  &
+                                ip_hubbard_l3 => hubbard_l3, ip_hubbard_n3 => Hubbard_n3,                             &
+                                ip_hubbard_alpha => hubbard_alpha, ip_Hubbard_alpha_back => hubbard_alpha_back,       &
+                                ip_hubbard_j => hubbard_j, starting_ns_eigenvalue,                                    &
+                                ip_hubbard_projectors => hubbard_projectors, ip_hubbard_v => Hubbard_V,               &
                                 vdw_corr, london, london_s6, london_c6, london_rcut, london_c6, xdm_a1, xdm_a2,       &
                                 ts_vdw_econv_thr, ts_vdw_isolated, dftd3_threebody,dftd3_version,                     &
                                 ip_noncolin => noncolin, ip_spinorbit => lspinorb,                                    &
                                 nbnd, smearing, degauss, ip_occupations=>occupations, tot_charge, tot_magnetization,  &
+                                degauss_cond,nbnd_cond,nelec_cond,                                                    &
                                 ip_k_points => k_points, ecutwfc, ip_ecutrho => ecutrho, ip_nr1 => nr1, ip_nr2=>nr2,  &
                                 ip_nr3 => nr3, ip_nr1s => nr1s, ip_nr2s => nr2s,ip_nr3s => nr3s, ip_nr1b=>nr1b,       &
                                 ip_nr2b=>nr2b, ip_nr3b => nr3b,                                                       &
                                 ip_diagonalization=>diagonalization, mixing_mode, mixing_beta,                        &
                                 mixing_ndim, tqr, tq_smoothing, tbeta_smoothing, exx_maxstep, electron_maxstep,       &
                                 diago_thr_init, diago_full_acc,                                                       & 
-                                diago_cg_maxiter, diago_ppcg_maxiter, diago_david_ndim,                               &
+                                diago_cg_maxiter, diago_david_ndim,                               &
                                 diago_rmm_ndim, diago_rmm_conv, diago_gs_nblock,                                      &
                                 nk1, nk2, nk3, k1, k2, k3, nkstot, ip_xk => xk, ip_wk => wk, ip_labelk => labelk,     &
                                 ion_dynamics, upscale, remove_rigid_rot, refold_pos, pot_extrapolation,               &
@@ -79,6 +80,7 @@
   USE fixed_occ,         ONLY:  f_inp               
 !
   USE kinds,             ONLY:   DP
+  USE two_chem,          ONLY:   twochem
   USE parameters,        ONLY:   ntypx, sc_size
   USE constants,         ONLY:   e2,bohr_radius_angs, RYTOEV
   USE ions_base,         ONLY:   iob_tau=>tau, nat, nsp, ityp
@@ -131,7 +133,7 @@
   INTEGER,POINTER                          :: dftd3_version_pt, nbnd_pt, nq1_pt, nq2_pt, nq3_pt   
   REAL(DP),ALLOCATABLE                     :: london_c6_(:), hubbard_U_(:), hubbard_U2_(:), hubbard_alpha_(:), &
                                               hubbard_alpha_back_(:), hubbard_J_(:,:), hubbard_J0_(:), hubbard_beta_(:), &
-                                              starting_ns_(:,:,:)
+                                              starting_ns_(:,:,:), Hubbard_Um_(:,:,:) 
   INTEGER, ALLOCATABLE                     :: hubbard_l_(:), hubbard_n_(:) 
   CHARACTER(LEN=3),ALLOCATABLE             :: species_(:)
   INTEGER, POINTER                         :: nr_1,nr_2, nr_3, nrs_1, nrs_2, nrs_3, nrb_1, nrb_2, nrb_3 
@@ -164,7 +166,7 @@
                                     restart_mode=restart_mode,prefix=prefix,pseudo_dir=pseudo_dir,outdir=outdir,       &
                                     stress=tstress,forces=tprnfor, wf_collect=wf_collect,disk_io=disk_io,              &
                                     max_seconds=max_seconds,etot_conv_thr=etot_conv_thr/e2,forc_conv_thr=forc_conv_thr/e2,   &
-                                    press_conv_thr=press_conv_thr,verbosity=verbosity,iprint=iprint, fcp=lfcp, rism=trism, &
+                                    press_conv_thr=press_conv_thr,verbosity=verbosity,iprint=iprint, fcp=lfcp, rism=trism,&
                                     NSTEP = cf_nstep)
   !------------------------------------------------------------------------------------------------------------------------
   !                                                 ATOMIC SPECIES                                                      
@@ -301,10 +303,17 @@
   END IF
   !
   IF (ip_lda_plus_u) THEN
+     IF  (ip_nspin == 2) THEN
+       spin_ns = 2
+     ELSE
+       spin_ns = 1
+     END IF
      !
      DO nt = 1, ntyp
        !
        is_hubbard(nt) = ip_Hubbard_U(nt)/= 0.0_dp .OR. &
+                        ANY(ip_hubbard_Um(:,:,nt)/=0.0_dp)  .OR. &
+                        ANY(ip_hubbard_Um_nc(:,nt)/=0.0_dp) .OR. &  
                         ip_Hubbard_U2(nt) /= 0.0_DP .OR. &
                         ip_Hubbard_alpha(nt) /= 0.0_dp .OR. &
                         ip_Hubbard_alpha_back(nt) /= 0.0_DP .OR. &
@@ -359,11 +368,6 @@
      END IF
      !
      IF (ANY(starting_ns_eigenvalue /= -1.0_DP)) THEN
-         IF (ip_nspin == 2) THEN
-            spin_ns = 2
-         ELSE
-            spin_ns = 1
-         END IF
          ALLOCATE (starting_ns_(2*hublmax+1, spin_ns, ntyp))
          starting_ns_          (1:2*hublmax+1, 1:spin_ns, 1:ntyp) = &
          starting_ns_eigenvalue(1:2*hublmax+1, 1:spin_ns, 1:ntyp)
@@ -377,12 +381,19 @@
         ALLOCATE(hubbard_l_(ntyp))
         hubbard_l_(1:ntyp) = ip_hubbard_l(1:ntyp)
      END IF
+     IF (ANY(ip_hubbard_Um(:,1:spin_ns,1:ntyp)/=0.0_dp)) THEN 
+       ALLOCATE(Hubbard_Um_(1:2*hublmax+1, spin_ns,1:ntyp)) 
+       Hubbard_Um_(:,:,:)  = ip_hubbard_Um(1:2*hublmax+1, 1:spin_ns,1:ntyp) * ev_to_Ha   
+     ELSE IF (ANY(ip_hubbard_Um_nc(:,1:ntyp)/=0.0_dp)) THEN 
+       ALLOCATE (Hubbard_Um_(1:4*hublmax+2,1,1:ntyp)) 
+       Hubbard_Um_(:,1,:)  = ip_hubbard_Um_nc(1:4*hublmax+2,1:ntyp) * ev_to_Ha   
+     END IF
      !
      !
      CALL qexsd_init_dftU(dftU_, NSP = ntyp, PSD = upf(1:ntyp)%psd, SPECIES = atm(1:ntyp), ITYP = ip_ityp(1:ip_nat), &
                            IS_HUBBARD = is_hubbard(1:ntyp), IS_HUBBARD_BACK= is_hubbard_back(1:ntyp),               &
                            NONCOLIN=ip_noncolin, LDA_PLUS_U_KIND = ip_lda_plus_u_kind, &
-                           U_PROJECTION_TYPE=ip_hubbard_projectors, U=hubbard_U_, U2=hubbard_U2_,  & 
+                           U_PROJECTION_TYPE=ip_hubbard_projectors, U=hubbard_U_, Um = hubbard_Um_, U2=hubbard_U2_,& 
                            HUBB_n2 = ip_hubbard_n2(1:ntyp), HUBB_L2 = ip_hubbard_l2(1:ntyp), &
                            HUBB_N3 = ip_hubbard_n3(1:ntyp), HUBB_L3= ip_hubbard_l3(1:ntyp), J0=hubbard_J0_, & 
                            J = hubbard_J_, n=hubbard_n_, l=hubbard_l_, HUBBARD_V = ip_hubbard_v * ev_to_Ha, &
@@ -440,7 +451,9 @@
         CALL qexsd_init_bands(obj%bands, nbnd_pt, smearing_loc, degauss/e2, ip_occupations, tot_charge, ip_nspin, &
                               TOT_MAG  = tot_magnetization)
      END IF
-  END IF 
+  END IF  
+  obj%twoch__ispresent=.TRUE.
+  CALL qexsd_init_twochem(obj%twoch_,'twoch_', twochem, nbnd_cond,degauss_cond,nelec_cond)
   !----------------------------------------------------------------------------------------------------------------------------
   !                                                    BASIS ELEMENT
   !---------------------------------------------------------------------------------------------------------------------------
@@ -469,7 +482,7 @@
   CALL qexsd_init_electron_control(obj%electron_control, diagonalization, mixing_mode, mixing_beta, conv_thr/e2,         &
                                    mixing_ndim, exx_maxstep, electron_maxstep, tqr, real_space, tq_smoothing, &
                                    tbeta_smoothing, diago_thr_init, &
-                                   diago_full_acc, diago_cg_maxiter, diago_ppcg_maxiter, diago_david_ndim, &
+                                   diago_full_acc, diago_cg_maxiter, diago_david_ndim, &
                                    diago_rmm_ndim, diago_rmm_conv, diago_gs_nblock)
   !--------------------------------------------------------------------------------------------------------------------------------
   !                                                   K POINTS IBZ ELEMENT

@@ -46,7 +46,9 @@ MODULE control_kcw
   LOGICAL  :: use_ws_distance                           ! if TRUE uses Wannier centers in the interpolation
   LOGICAL  :: write_hr                                  ! if TRUE prints KC H(R) to file
   INTEGER,  ALLOCATABLE   :: map_ikq(:)                 ! map k+q -> p+G 
+  INTEGER,  ALLOCATABLE   :: map_ikq_minus(:)           ! map k-q -> p+G 
   REAL(DP), ALLOCATABLE :: shift_1bz(:,:)               ! the G to brings k+q inside the 1BZ
+  REAL(DP), ALLOCATABLE :: shift_1bz_minus(:,:)         ! the G to brings k-q inside the 1BZ
   INTEGER :: kcw_iverbosity                              ! set the verbosity 
   INTEGER :: spin_component                             ! which spin component to compute 
   INTEGER, ALLOCATABLE :: isq(:)                        ! the spin of the q point
@@ -56,6 +58,8 @@ MODULE control_kcw
   INTEGER :: iorb_start, iorb_end                       
   REAL (DP), ALLOCATABLE :: wq(:)                       ! weight of the point q
   INTEGER :: nqstot                                     ! total number of q points 
+  INTEGER :: nrho
+  INTEGER :: nkstot_eff
   !
   CHARACTER(len=256) :: calculation                     ! set which calculation (screen or ham)
   !
@@ -96,5 +100,42 @@ MODULE control_kcw
   LOGICAL, ALLOCATABLE :: lgamma_iq(:)
   !! if TRUE this q is gamma.
   !
+  LOGICAL :: io_sp, io_real_space
+  !
+  !Giovanni Cistaro
+  !
+  REAL(DP),    ALLOCATABLE :: r(:,:)! position in the real grid
+                                    ! defined by q-e
+  INTEGER                  :: ir_end !last index of r array
+
+  INTEGER(DP), ALLOCATABLE    :: s_w(:,:,:,:)
+  !symmetries respected by each wannier function
+  REAL(DP), ALLOCATABLE    :: ft_w(:,:,:)
+  !fractional translation
+  INTEGER, ALLOCATABLE     :: nsym_w_k(:)
+  !number of symmetries respected by each wannier function, with the constraint 
+  !of the center. Will be used for reducing k points
+  INTEGER, ALLOCATABLE     :: nsym_w_q(:)
+  !number of symmetries respected by each wannier function, without the contraint
+  !of the center.
+  !will be used only for reducing q points (are in general more than nsym_w_k)
+  INTEGER, ALLOCATABLE     :: nqstot_ibz(:)
+  !total number of q points in irreducible bz
+  REAL(DP), ALLOCATABLE    :: xq_ibz(:,:,:)
+  !q coordinates (cartesian, in units of 2pi/alat)
+  REAL(DP), ALLOCATABLE    :: wq_ibz(:,:)
+  !weights of q points
+  INTEGER, ALLOCATABLE     :: ibz2fbz(:,:)
+  !index of q point in xq_ibz in array xk
+  INTEGER, ALLOCATABLE     :: fbz2ibz(:, :)
+  !index of q point xk in array xq_ibz
+  LOGICAL                  :: irr_bz
+  INTEGER                  :: nsym_old
+  !to keep track of number of symmetries of crystal, without restrictions
+  LOGICAL                  :: setup_pw
+!  !variable to decide wether we want to move the wannier centers in the origin when checking symmetries
+  LOGICAL                  :: use_wct
+  !variable to decide wether we want to verify if symmetries move a Wannier in an other unitcell in the supercell
+  LOGICAL, ALLOCATABLE     :: sym_only_for_q(:,:)
 END MODULE control_kcw
 

@@ -27,9 +27,6 @@ subroutine incdrhoscf (drhoscf, weight, ik, dbecsum, dpsi)
   USE mp_bands,             ONLY : me_bgrp, inter_bgrp_comm, ntask_groups
   USE mp,                   ONLY : mp_sum
   USE fft_helper_subroutines
-#if defined(__CUDA)
-  USE wavefunctions_gpum,   ONLY : evc_d
-#endif
 
   IMPLICIT NONE
   !
@@ -54,7 +51,7 @@ subroutine incdrhoscf (drhoscf, weight, ik, dbecsum, dpsi)
   COMPLEX(DP), ALLOCATABLE :: tg_psi(:), tg_dpsi(:), tg_drho(:)
 
   INTEGER :: npw, npwq, ikk, ikq, itmp
-  INTEGER :: ibnd, ir, ir3, ig, incr, v_siz, idx, ioff, ioff_tg, nxyp
+  INTEGER :: ibnd, ir, ir3, ig, incr, v_siz, idx, ioff, ioff_tg, nxyp, sum_siz
   INTEGER :: right_inc, ntgrp
   ! counters
 
@@ -63,7 +60,6 @@ subroutine incdrhoscf (drhoscf, weight, ik, dbecsum, dpsi)
   INTEGER, POINTER, DEVICE :: nl_d(:)
   !
   nl_d  => dffts%nl_d
-  evc_d = evc
 #else
   INTEGER, ALLOCATABLE :: nl_d(:)
   !
@@ -96,12 +92,13 @@ subroutine incdrhoscf (drhoscf, weight, ik, dbecsum, dpsi)
      !
   ELSE
      v_siz = dffts%nnr
+     sum_siz = nhm*(nhm+1)/2
   ENDIF
   !
   ! dpsi contains the   perturbed wavefunctions of this k point
   ! evc  contains the unperturbed wavefunctions of this k point
   !
-  !$acc data copyin(dpsi(1:npwx,1:nbnd)) copy(drhoscf(1:v_siz)) create(psi(1:v_siz),dpsic(1:v_siz)) present(igk_k) deviceptr(evc_d, nl_d) 
+  !$acc data present_or_copyin(dpsi(1:npwx,1:nbnd)) present_or_copy(drhoscf(1:v_siz)) create(psi(1:v_siz),dpsic(1:v_siz)) present(igk_k) deviceptr(nl_d)
   do ibnd = 1, nbnd_occ(ikk), incr
      !
      IF ( dffts%has_task_groups ) THEN
@@ -159,11 +156,7 @@ subroutine incdrhoscf (drhoscf, weight, ik, dbecsum, dpsi)
         !$acc parallel loop 
         do ig = 1, npw
            itmp = nl_d (igk_k(ig,ikk) )
-#if defined(__CUDA)
-           psi (itmp ) = evc_d (ig, ibnd)
-#else
            psi (itmp ) = evc (ig, ibnd)
-#endif
         enddo
         !$acc parallel loop
         do ig = 1, npwq
@@ -190,11 +183,11 @@ subroutine incdrhoscf (drhoscf, weight, ik, dbecsum, dpsi)
      ENDIF
      !
   enddo ! loop on bands
-  !$acc end data
   !
   ! Ultrasoft contribution
   ! Calculate dbecsum = <evc|vkb><vkb|dpsi>
   ! 
+  !$acc end data
   CALL addusdbec (ik, weight, dpsi, dbecsum)
   !
   DEALLOCATE(psi)

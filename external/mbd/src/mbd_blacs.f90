@@ -43,9 +43,46 @@ interface blacs_all_reduce
     module procedure all_reduce_complex_2d
 end interface
 
-external :: BLACS_PINFO, BLACS_GRIDINIT, BLACS_GRIDINFO, &
-    BLACS_GRIDEXIT, NUMROC, DESCINIT, DGSUM2D, ZGSUM2D, BLACS_GET
-integer :: NUMROC
+interface
+    ! The following interfaces were written by hand based on
+    ! https://www.netlib.org/blacs/BLACS/QRef.html and https://www.ibm.com/docs/
+    subroutine BLACS_PINFO(MYPNUM, NPROCS)
+        integer :: MYPNUM, NPROCS
+    end
+    subroutine BLACS_GRIDINIT(ICONTXT, ORDER, NPROW, NPCOL)
+        integer :: ICONTXT, NPROW, NPCOL
+        character :: ORDER
+    end
+    subroutine BLACS_GRIDINFO(ICONTXT, NPROW, NPCOL, MYPROW, MYPCOL)
+        integer :: ICONTXT, NPROW, NPCOL, MYPROW, MYPNUM
+    end
+    subroutine BLACS_GRIDEXIT(ICONTXT)
+        integer :: ICONTXT
+    end
+    subroutine BLACS_GET(ICONTXT, WHAT, VAL)
+        integer :: ICONTXT, WHAT, VAL
+    end subroutine
+    integer function NUMROC(n, nb, iproc, isrcproc, nprocs)
+        integer :: n, nb, iproc, isrcproc, nprocs
+    end
+    subroutine DGSUM2D(ICONTXT, SCOPE, TOP, M, N, A, LDA, RDEST, CDEST)
+        integer :: ICONTXT, RDEST, CDEST, M, N, LDA
+        character :: SCOPE, TOP
+        double precision :: A(*)
+    end
+    subroutine ZGSUM2D(ICONTXT, SCOPE, TOP, M, N, A, LDA, RDEST, CDEST)
+        import :: dp
+        integer :: ICONTXT, RDEST, CDEST, M, N, LDA
+        character :: SCOPE, TOP
+        complex(dp) :: A(*)
+    end
+
+    ! The following interfaces were taken straight from the ScaLAPACK codebase
+    SUBROUTINE DESCINIT(DESC, M, N, MB, NB, IRSRC, ICSRC, ICTXT, LLD, INFO)
+        INTEGER ICSRC, ICTXT, INFO, IRSRC, LLD, M, MB, N, NB
+        INTEGER DESC(*)
+    END
+end interface
 
 contains
 
@@ -58,9 +95,9 @@ subroutine blacs_grid_init(this, comm)
     call BLACS_PINFO(my_task, n_tasks)
     do nprows = int(sqrt(dble(n_tasks))), 1, -1
         if (mod(n_tasks, nprows) == 0) exit
-    enddo
+    end do
     this%nprows = nprows
-    this%npcols = n_tasks/this%nprows
+    this%npcols = n_tasks / this%nprows
     if (present(comm)) then
         this%ctx = comm
         this%comm = comm
@@ -98,10 +135,10 @@ subroutine blacs_desc_init(this, n_atoms, grid, max_atoms_per_block)
     atoms_per_block = min(atoms_per_block, max_atoms_per_block)
     my_nratoms = NUMROC(n_atoms, atoms_per_block, grid%my_prow, 0, grid%nprows)
     my_ncatoms = NUMROC(n_atoms, atoms_per_block, grid%my_pcol, 0, grid%npcols)
-    this%blocksize = 3*atoms_per_block
+    this%blocksize = 3 * atoms_per_block
     call DESCINIT( &
-        this%desc, 3*n_atoms, 3*n_atoms, this%blocksize, this%blocksize, 0, 0, &
-        grid%ctx, 3*my_nratoms, ierr &
+        this%desc, 3 * n_atoms, 3 * n_atoms, this%blocksize, this%blocksize, 0, 0, &
+        grid%ctx, 3 * my_nratoms, ierr &
     )
     this%i_atom = idx_map( &
         grid%my_prow, grid%nprows, n_atoms, atoms_per_block, my_nratoms &
@@ -137,59 +174,59 @@ subroutine all_reduce_real_scalar(x, blacs)
     real(dp), intent(inout) :: x
     type(blacs_desc_t), intent(in) :: blacs
 
-    real(dp) :: x_arr(1)
+    real(dp), pointer :: x_arr(:, :)
 
-    x_arr(1) = x
+    x_arr(1, 1) = x
     call DGSUM2D(blacs%ctx, 'A', ' ', 1, 1, x_arr, 1, -1, -1)
-    x = x_arr(1)
+    x = x_arr(1, 1)
 end subroutine
 
 subroutine all_reduce_complex_scalar(x, blacs)
     complex(dp), intent(inout) :: x
     type(blacs_desc_t), intent(in) :: blacs
 
-    complex(dp) :: x_arr(1)
+    complex(dp) :: x_arr(1, 1)
 
-    x_arr(1) = x
+    x_arr(1, 1) = x
     call ZGSUM2D(blacs%ctx, 'A', ' ', 1, 1, x_arr, 1, -1, -1)
-    x = x_arr(1)
+    x = x_arr(1, 1)
 end subroutine
 
 subroutine all_reduce_real_1d(A, blacs)
-    real(dp), intent(inout) :: A(:)
+    real(dp), target, intent(inout) :: A(:)
     type(blacs_desc_t), intent(in) :: blacs
 
-    call DGSUM2D(blacs%ctx, 'A', ' ', size(A), 1, A, size(A), -1, -1)
+    real(dp), pointer :: A_p(:, :)
+
+    A_p(1:size(A), 1:1) => A
+    call DGSUM2D(blacs%ctx, 'A', ' ', size(A), 1, A_p, size(A), -1, -1)
 end subroutine
 
 subroutine all_reduce_real_2d(A, blacs)
-    real(dp), contiguous, target, intent(inout) :: A(:, :)
+    real(dp), intent(inout) :: A(:, :)
     type(blacs_desc_t), intent(in) :: blacs
 
-    real(dp), pointer :: A_p(:)
-
-    A_p(1:size(A)) => A
     call DGSUM2D( &
-        blacs%ctx, 'A', ' ', size(A, 1), size(A, 2), A_p, size(A, 1), -1, -1 &
+        blacs%ctx, 'A', ' ', size(A, 1), size(A, 2), A, size(A, 1), -1, -1 &
     )
 end subroutine
 
 subroutine all_reduce_complex_1d(A, blacs)
-    complex(dp), intent(inout) :: A(:)
+    complex(dp), target, intent(inout) :: A(:)
     type(blacs_desc_t), intent(in) :: blacs
 
-    call ZGSUM2D(blacs%ctx, 'A', ' ', size(A), 1, A, size(A), -1, -1)
+    complex(dp), pointer :: A_p(:, :)
+
+    A_p(1:size(A), 1:1) => A
+    call ZGSUM2D(blacs%ctx, 'A', ' ', size(A), 1, A_p, size(A), -1, -1)
 end subroutine
 
 subroutine all_reduce_complex_2d(A, blacs)
-    complex(dp), contiguous, target, intent(inout) :: A(:, :)
+    complex(dp), intent(inout) :: A(:, :)
     type(blacs_desc_t), intent(in) :: blacs
 
-    complex(dp), pointer :: A_p(:)
-
-    A_p(1:size(A)) => A
     call ZGSUM2D( &
-        blacs%ctx, 'A', ' ', size(A, 1), size(A, 2), A_p, size(A, 1), -1, -1 &
+        blacs%ctx, 'A', ' ', size(A, 1), size(A, 2), A, size(A, 1), -1, -1 &
     )
 end subroutine
 

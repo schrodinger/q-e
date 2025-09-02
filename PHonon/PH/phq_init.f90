@@ -43,9 +43,6 @@ SUBROUTINE phq_init()
   USE wvfct,                ONLY : npwx, nbnd
   USE gvecw,                ONLY : gcutw
   USE wavefunctions,        ONLY : evc
-#if defined(__CUDA)
-  USE wavefunctions_gpum,   ONLY : evc_d
-#endif
   USE noncollin_module,     ONLY : noncolin, domag, npol, lspinorb
   USE uspp,                 ONLY : okvan, vkb, nlcc_any, nkb
   USE phus,                 ONLY : alphap
@@ -61,7 +58,7 @@ SUBROUTINE phq_init()
   USE qpoint,               ONLY : xq, nksq, eigqts, ikks, ikqs
   USE qpoint_aux,           ONLY : becpt, alphapt, ikmks
   USE eqv,                  ONLY : evq
-  USE control_lr,           ONLY : nbnd_occ, lgamma
+  USE control_lr,           ONLY : nbnd_occ, lgamma, lmultipole
   USE ldaU,                 ONLY : lda_plus_u
   USE uspp_init,            ONLY : init_us_2
   !
@@ -194,10 +191,8 @@ SUBROUTINE phq_init()
      ! ...    the code
      !
 #if defined(__CUDA)
-     evc_d = evc
-     !$acc data present_or_copyin(evc)
+     !$acc update device(evc) 
      Call calbec( offload_type, npw, vkb, evc, bectmp )
-     !$acc end data
      Call becupdate( offload_type, becp1, ik, nksq, bectmp ) 
 #else
      Call calbec( offload_type, npw, vkb, evc, becp1(ik) )
@@ -221,13 +216,8 @@ SUBROUTINE phq_init()
         DO ibnd = 1, nbnd
            DO ig = 1, npw
               itmp = igk_k(ig,ikk)
-#if defined(__CUDA)
-              aux1(ig,ibnd) = evc_d(ig,ibnd) * tpiba * ( 0.D0, 1.D0 ) * &
-                   ( xk(ipol,ikk) + g(ipol,itmp) )
-#else
               aux1(ig,ibnd) = evc(ig,ibnd) * tpiba * ( 0.D0, 1.D0 ) * &
                    ( xk(ipol,ikk) + g(ipol,itmp) )
-#endif
            END DO
         END DO
         IF (noncolin) THEN
@@ -235,13 +225,8 @@ SUBROUTINE phq_init()
            DO ibnd = 1, nbnd
               DO ig = 1, npw
                  itmp = igk_k(ig,ikk)
-#if defined(__CUDA)
-                 aux1(ig+npwx,ibnd)=evc_d(ig+npwx,ibnd)*tpiba*(0.D0,1.D0)*&
-                      ( xk(ipol,ikk) + g(ipol,itmp) )
-#else
                  aux1(ig+npwx,ibnd)=evc(ig+npwx,ibnd)*tpiba*(0.D0,1.D0)*&
                       ( xk(ipol,ikk) + g(ipol,itmp) )
-#endif
               END DO
            END DO
         END IF
@@ -361,7 +346,7 @@ SUBROUTINE phq_init()
      !
   ENDIF
   !
-  IF ( trans ) CALL dynmat0_new()
+  IF ( trans .AND. (.NOT. lmultipole) ) CALL dynmat0_new()
   !
 #if defined(__CUDA)
   Call deallocate_bec_type_acc ( bectmp )

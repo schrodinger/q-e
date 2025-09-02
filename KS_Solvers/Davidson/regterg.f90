@@ -1,5 +1,5 @@
 !
-! Copyright (C) 2001-2015 Quantum ESPRESSO group
+! Copyright (C) 2001-2024 Quantum ESPRESSO Foundation
 ! This file is distributed under the terms of the
 ! GNU General Public License. See the file `License'
 ! in the root directory of the present distribution,
@@ -81,13 +81,12 @@ SUBROUTINE regterg(  h_psi_ptr, s_psi_ptr, uspp, g_psi_ptr, &
   INTEGER :: n_start, n_end, my_n
   INTEGER :: ierr
   REAL(DP), ALLOCATABLE :: hr(:,:), sr(:,:), vr(:,:), ew(:)
-  !$acc declare device_resident(hr, sr, vr, ew)
+  !$acc declare device_resident(hr, sr, vr)
     ! Hamiltonian on the reduced basis
     ! S matrix on the reduced basis
     ! eigenvectors of the Hamiltonian
     ! eigenvalues of the reduced hamiltonian
   COMPLEX(DP), ALLOCATABLE :: psi(:,:), hpsi(:,:), spsi(:,:)
-  !$acc declare device_resident(psi, hpsi, spsi)
     ! work space, contains psi
     ! the product of H and psi
     ! the product of S and psi
@@ -112,7 +111,7 @@ SUBROUTINE regterg(  h_psi_ptr, s_psi_ptr, uspp, g_psi_ptr, &
   !
   CALL start_clock( 'regterg' ) !; write(6,*) 'enter regterg' ; FLUSH(6)
   ! 
-  !$acc data deviceptr(evc, e)
+  !$acc data deviceptr(e)
   !
   IF ( nvec > nvecx / 2 ) CALL errore( 'regter', 'nvecx is too small', 1 )
   !
@@ -131,11 +130,13 @@ SUBROUTINE regterg(  h_psi_ptr, s_psi_ptr, uspp, g_psi_ptr, &
   ALLOCATE( hpsi( npwx, nvecx ), STAT=ierr )
   IF( ierr /= 0 ) &
      CALL errore( 'regterg ',' cannot allocate hpsi ', ABS(ierr) )
+  !$acc enter data create(psi, hpsi)
   !
   IF ( uspp ) THEN
      ALLOCATE( spsi( npwx, nvecx ), STAT=ierr )
      IF( ierr /= 0 ) &
         CALL errore( ' regterg ',' cannot allocate spsi ', ABS(ierr) )
+     !$acc enter data create(spsi)
   END IF
   !
   ALLOCATE( sr( nvecx, nvecx ), STAT=ierr )
@@ -150,6 +151,7 @@ SUBROUTINE regterg(  h_psi_ptr, s_psi_ptr, uspp, g_psi_ptr, &
   ALLOCATE( ew( nvecx ), STAT=ierr )
   IF( ierr /= 0 ) &
      CALL errore( 'regterg ',' cannot allocate ew ', ABS(ierr) )
+  !$acc enter data create(ew)
   ALLOCATE( conv( nvec ), STAT=ierr )
   IF( ierr /= 0 ) &
      CALL errore( 'regterg ',' cannot allocate conv ', ABS(ierr) )
@@ -179,13 +181,11 @@ SUBROUTINE regterg(  h_psi_ptr, s_psi_ptr, uspp, g_psi_ptr, &
   !
   ! ... hpsi contains h times the basis vectors
   !
-  !$acc host_data use_device(psi, hpsi, spsi)
   CALL h_psi_ptr( npwx, npw, nvec, psi, hpsi )  ; nhpsi = nvec
   !
   ! ... spsi contains s times the basis vectors
   !
   IF ( uspp ) CALL s_psi_ptr( npwx, npw, nvec, psi, spsi )
-  !$acc end host_data
   !
   ! ... hr contains the projection of the hamiltonian onto the reduced
   ! ... space vr contains the eigenvectors of hr
@@ -333,17 +333,17 @@ SUBROUTINE regterg(  h_psi_ptr, s_psi_ptr, uspp, g_psi_ptr, &
         END DO
      END DO
      !
-     !$acc host_data use_device(psi, hpsi, vr, ew)
+     !$acc host_data use_device(psi, hpsi, vr)
      if (n_start .le. n_end) &
      CALL DGEMM( 'N','N', npw2, notcnv, my_n, 1.D0, hpsi(1,n_start), npwx2, vr(n_start,1), nvecx, 1.D0, psi(1,nb1), npwx2 )
      CALL mp_sum( psi(:,nb1:nbase+notcnv), inter_bgrp_comm )
+     !$acc end host_data
      !
      CALL stop_clock( 'regterg:update' )
      !
      ! ... approximate inverse iteration
      !
      CALL g_psi_ptr( npwx, npw, notcnv, 1, psi(1,nb1), ew(nb1) )
-     !$acc end host_data
      !
      ! ... "normalize" correction vectors psi(:,nb1:nbase+notcnv) in 
      ! ... order to improve numerical stability of subspace diagonalization 
@@ -382,11 +382,9 @@ SUBROUTINE regterg(  h_psi_ptr, s_psi_ptr, uspp, g_psi_ptr, &
      !
      ! ... here compute the hpsi and spsi of the new functions
      !
-     !$acc host_data use_device(psi, hpsi, spsi)
      CALL h_psi_ptr( npwx, npw, notcnv, psi(1,nb1), hpsi(1,nb1) ) ; nhpsi = nhpsi + notcnv
      !
      IF ( uspp ) CALL s_psi_ptr( npwx, npw, notcnv, psi(1,nb1), spsi(1,nb1) )
-     !$acc end host_data
      !
      ! ... update the reduced hamiltonian
      !
@@ -509,10 +507,10 @@ SUBROUTINE regterg(  h_psi_ptr, s_psi_ptr, uspp, g_psi_ptr, &
         !
         CALL divide(inter_bgrp_comm,nbase,n_start,n_end)
         my_n = n_end - n_start + 1; !write (*,*) nbase,n_start,n_end
-        !$acc host_data use_device(psi, vr)
+        !$acc host_data use_device(evc, psi, vr)
         CALL DGEMM( 'N','N', npw2, nvec, my_n, 1.D0, psi(1,n_start), npwx2, vr(n_start,1), nvecx, 0.D0, evc, npwx2 )
-        !$acc end host_data
         CALL mp_sum( evc, inter_bgrp_comm )
+        !$acc end host_data
         !
         IF ( notcnv == 0 ) THEN
            !
@@ -609,13 +607,18 @@ SUBROUTINE regterg(  h_psi_ptr, s_psi_ptr, uspp, g_psi_ptr, &
   END DO iterate
   !
   DEALLOCATE( conv )
-  DEALLOCATE( ew )
   DEALLOCATE( vr )
   DEALLOCATE( hr )
   DEALLOCATE( sr )
+  !$acc exit data delete(ew)
+  DEALLOCATE( ew )
   !
-  IF ( uspp ) DEALLOCATE( spsi )
+  IF ( uspp ) THEN
+     !$acc exit data delete(spsi)
+     DEALLOCATE( spsi )
+  END IF
   !
+  !$acc exit data delete(psi, hpsi)
   DEALLOCATE( hpsi )
   DEALLOCATE( psi )  
   !

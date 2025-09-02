@@ -22,8 +22,8 @@ echo $1
 if [[ "$1" == "0" ]]
 then
   echo "Running PW ..."
-  echo "${PARA_PREFIX} ${ESPRESSO_ROOT}/bin/pw.x -input $2 > $3 2> $4"
-  ${PARA_PREFIX} ${ESPRESSO_ROOT}/bin/pw.x -input $2 > $3 2> $4
+  echo "${PARA_PREFIX} ${ESPRESSO_BUILD}/bin/pw.x -input $2 > $3 2> $4"
+  ${PARA_PREFIX} ${ESPRESSO_BUILD}/bin/pw.x -input $2 > $3 2> $4
   if [[ -e CRASH ]]
   then
     cat $3
@@ -31,8 +31,8 @@ then
 elif [[ "$1" == "1" ]]
 then
   echo "Running PW ..."
-  echo "${PARA_PREFIX} ${ESPRESSO_ROOT}/bin/pw.x ${PARA_SUFFIX} -input $2 > $3 2> $4"
-  ${PARA_PREFIX} ${ESPRESSO_ROOT}/bin/pw.x ${PARA_SUFFIX} -input $2 > $3 2> $4
+  echo "${PARA_PREFIX} ${ESPRESSO_BUILD}/bin/pw.x ${PARA_SUFFIX} -input $2 > $3 2> $4"
+  ${PARA_PREFIX} ${ESPRESSO_BUILD}/bin/pw.x ${PARA_SUFFIX} -input $2 > $3 2> $4
   if [[ -e CRASH ]]
   then
     cat $3
@@ -40,8 +40,8 @@ then
 elif [[ "$1" == "2" ]]
 then
   echo "Running PH ..."
-  echo "${PARA_PREFIX} ${ESPRESSO_ROOT}/bin/ph.x ${PARA_SUFFIX} -input $2 > $3 2> $4"
-  ${PARA_PREFIX} ${ESPRESSO_ROOT}/bin/ph.x ${PARA_SUFFIX} -input $2 > $3 2> $4
+  echo "${PARA_PREFIX} ${ESPRESSO_BUILD}/bin/ph.x ${PARA_SUFFIX} -input $2 > $3 2> $4"
+  ${PARA_PREFIX} ${ESPRESSO_BUILD}/bin/ph.x ${PARA_SUFFIX} -input $2 > $3 2> $4
   if [[ -e CRASH ]]
   then
     cat $3
@@ -51,8 +51,8 @@ then
 elif [[ "$1" == "3" ]]
 then
   echo "Running EPW ..."
-  echo "${PARA_PREFIX} ${ESPRESSO_ROOT}/bin/epw.x ${PARA_SUFFIX} -input $2 > $3 2> $4"
-  ${PARA_PREFIX} ${ESPRESSO_ROOT}/bin/epw.x ${PARA_SUFFIX} -input $2 > $3 2> $4
+  echo "${PARA_PREFIX} ${ESPRESSO_BUILD}/bin/epw.x ${PARA_SUFFIX} -input $2 > $3 2> $4"
+  ${PARA_PREFIX} ${ESPRESSO_BUILD}/bin/epw.x ${PARA_SUFFIX} -input $2 > $3 2> $4
   if [[ -e CRASH ]]
   then
     cat $3
@@ -60,8 +60,8 @@ then
 elif [[ "$1" == "4" ]]
 then
   echo "Running Q2R ..."
-  echo "${PARA_PREFIX} ${ESPRESSO_ROOT}/bin/q2r.x -input $2 > $3 2> $4"
-  ${PARA_PREFIX} ${ESPRESSO_ROOT}/bin/q2r.x -input $2 > $3 2> $4
+  echo "${PARA_PREFIX} ${ESPRESSO_BUILD}/bin/q2r.x -input $2 > $3 2> $4"
+  ${PARA_PREFIX} ${ESPRESSO_BUILD}/bin/q2r.x -input $2 > $3 2> $4
   if [[ -e CRASH ]]
   then
     cat $3
@@ -73,9 +73,9 @@ then
   echo "Removing restart files ..."
   echo "Running EPW ..."
 ######  rm *.Fin_restart1 *.Fin_restartcb1 restart.fmt
-  rm restart.fmt
-  echo "${PARA_PREFIX} ${ESPRESSO_ROOT}/bin/epw.x ${PARA_SUFFIX} -input $2 > $3 2> $4"
-  ${PARA_PREFIX} ${ESPRESSO_ROOT}/bin/epw.x ${PARA_SUFFIX} -input $2 > $3 2> $4
+  rm -rf restart* F* sparse*
+  echo "${PARA_PREFIX} ${ESPRESSO_BUILD}/bin/epw.x ${PARA_SUFFIX} -input $2 > $3 2> $4"
+  ${PARA_PREFIX} ${ESPRESSO_BUILD}/bin/epw.x ${PARA_SUFFIX} -input $2 > $3 2> $4
   if [[ -e CRASH ]]
   then
     cat $3
@@ -83,8 +83,8 @@ then
 elif [[ "$1" == "6" ]]
 then
   echo "Running MATDYN ..."
-# echo "${PARA_PREFIX} ${ESPRESSO_ROOT}/bin/matdyn.x < $2 > $3 2> $4"
-  ${PARA_PREFIX} ${ESPRESSO_ROOT}/bin/matdyn.x < $2 > $3 2> $4
+# echo "${PARA_PREFIX} ${ESPRESSO_BUILD}/bin/matdyn.x < $2 > $3 2> $4"
+  ${PARA_PREFIX} ${ESPRESSO_BUILD}/bin/matdyn.x < $2 > $3 2> $4
   cp matdyn.modes $3
   if [[ -e CRASH ]]
   then
@@ -95,8 +95,8 @@ then
   # ph.x, electron_phonon = 'ahc'
   rm -rf save/ahc_dir/
   echo "Running PH ..."
-  echo "${PARA_PREFIX} ${ESPRESSO_ROOT}/bin/ph.x ${PARA_SUFFIX} -input $2 > $3 2> $4"
-  ${PARA_PREFIX} ${ESPRESSO_ROOT}/bin/ph.x ${PARA_SUFFIX} -input $2 > $3 2> $4
+  echo "${PARA_PREFIX} ${ESPRESSO_BUILD}/bin/ph.x ${PARA_SUFFIX} -input $2 > $3 2> $4"
+  ${PARA_PREFIX} ${ESPRESSO_BUILD}/bin/ph.x ${PARA_SUFFIX} -input $2 > $3 2> $4
   if [[ -e CRASH ]]
   then
     cat $3
@@ -104,8 +104,59 @@ then
 elif [[ "$1" == "8" ]]
 then
   echo "Running POSTAHC ..."
-# echo "${PARA_PREFIX} ${ESPRESSO_ROOT}/bin/postahc.x < $2 > $3 2> $4"
-  ${PARA_PREFIX} ${ESPRESSO_ROOT}/bin/postahc.x < $2 > $3 2> $4
+  echo "${PARA_PREFIX} ${ESPRESSO_BUILD}/bin/postahc.x < $2 > $3 2> $4"
+  ${PARA_PREFIX} ${ESPRESSO_BUILD}/bin/postahc.x < $2 > $3 2> $4
+  if [[ -e CRASH ]]
+  then
+    cat $3
+  fi
+elif [[ "$1" == "9" ]]
+then
+  # nscf2supercond.x
+  echo "Running NSCF2SUPERCOND ..."
+  echo "${PARA_PREFIX} ${ESPRESSO_BUILD}/bin/nscf2supercond.x ${PARA_SUFFIX} -input $2 > $3 2> $4"
+  ${PARA_PREFIX} ${ESPRESSO_BUILD}/bin/nscf2supercond.x ${PARA_SUFFIX} -input $2 > $3 2> $4
+  cat *.bands.*.dat >> $3
+  if [[ -e CRASH ]]
+  then
+    cat $3
+  fi
+elif [[ "$1" == "10" ]]
+then
+  echo "Removing restart files ..."
+  echo "Running EPW with images..."
+  rm -rf restart* F* sparse*
+  export PARA_SUFFIX_OLD=${PARA_SUFFIX}
+  if [[ "$QE_USE_MPI" != "" ]]; then
+    if (( QE_USE_MPI % 2 == 0 )); then
+      export PARA_SUFFIX="-nk $((QE_USE_MPI / 2)) -ni 2"
+    else
+      export PARA_SUFFIX="-nk 1 -ni $QE_USE_MPI"
+    fi  
+  fi
+  echo "${PARA_PREFIX} ${ESPRESSO_BUILD}/bin/epw.x ${PARA_SUFFIX} -input $2 > $3 2> $4"
+  ${PARA_PREFIX} ${ESPRESSO_BUILD}/bin/epw.x ${PARA_SUFFIX} -input $2 > $3 2> $4
+  export PARA_SUFFIX=${PARA_SUFFIX_OLD}
+  unset PARA_SUFFIX_OLD
+  if [[ -e CRASH ]]
+  then
+    cat $3
+  fi
+elif [[ "$1" == "11" ]]
+then
+  echo "Running EPW with images..."
+  export PARA_SUFFIX_OLD=${PARA_SUFFIX}
+  if [[ "$QE_USE_MPI" != "" ]]; then
+    if (( QE_USE_MPI % 2 == 0 )); then
+      export PARA_SUFFIX="-nk $((QE_USE_MPI / 2)) -ni 2"
+    else
+      export PARA_SUFFIX="-nk 1 -ni $QE_USE_MPI"
+    fi  
+  fi
+  echo "${PARA_PREFIX} ${ESPRESSO_BUILD}/bin/epw.x ${PARA_SUFFIX} -input $2 > $3 2> $4"
+  ${PARA_PREFIX} ${ESPRESSO_BUILD}/bin/epw.x ${PARA_SUFFIX} -input $2 > $3 2> $4
+  export PARA_SUFFIX=${PARA_SUFFIX_OLD}
+  unset PARA_SUFFIX_OLD
   if [[ -e CRASH ]]
   then
     cat $3

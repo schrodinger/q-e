@@ -81,6 +81,7 @@ SUBROUTINE ch_psi_all_complex (n, h, ah, e, ik, m)
      ! Hubbard potential.
      !
      CALL get_buffer (wfcU, nwordwfcU, iuatswfc, current_k)
+     !$acc update device(wfcU)
      !
      ! Compute the phase factor at k+q
      !IF (lda_plus_u_kind.EQ.2) CALL phase_factor(ikq)
@@ -96,20 +97,13 @@ SUBROUTINE ch_psi_all_complex (n, h, ah, e, ik, m)
   spsi (:,:) = (0.d0, 0.d0)
   !$acc end kernels
 #if defined(__CUDA)
-  !$acc data present(h, hpsi, spsi)
-  !$acc host_data use_device(h, hpsi, spsi)
   CALL h_psi_gpu (npwx, n, m, h, hpsi)
   CALL s_psi_acc (npwx, n, m, h, spsi)
-  !$acc end host_data
-  !$acc end data
-
 #else
-
   CALL h_psi (npwx, n, m, h, hpsi)
   CALL s_psi (npwx, n, m, h, spsi)
-
 #endif
-
+  !
   CALL start_clock ('last')
   !
   !   then we compute ( H - \epsilon S ) * h
@@ -167,10 +161,6 @@ CONTAINS
     !
     ! K-point part
     !
-#if defined(__CUDA)
-    USE cublas
-#endif
-    
     IMPLICIT NONE
     INTEGER :: m_start, m_end
     INTEGER :: k
@@ -191,10 +181,10 @@ CONTAINS
     !
     !$acc host_data use_device(spsi, ps, evq)
     IF (noncolin) THEN
-       CALL zgemm ('C', 'N', k, m, npwx*npol, (1.d0, 0.d0) , evq, &
+       CALL myzgemm ('C', 'N', k, m, npwx*npol, (1.d0, 0.d0) , evq, &
             npwx*npol, spsi, npwx*npol, (0.d0, 0.d0) , ps, nbnd)
     ELSE
-       CALL zgemm ('C', 'N', k, m, n, (1.d0, 0.d0) , evq, &
+       CALL myzgemm ('C', 'N', k, m, n, (1.d0, 0.d0) , evq, &
             npwx, spsi, npwx, (0.d0, 0.d0) , ps, nbnd)
     ENDIF
     !$acc end host_data
@@ -207,10 +197,10 @@ CONTAINS
     !$acc end host_data
     !$acc host_data use_device(hpsi, ps, evq)
     IF (noncolin) THEN
-       CALL zgemm ('N', 'N', npwx*npol, m, k, (1.d0, 0.d0) , evq, &
+       CALL myzgemm ('N', 'N', npwx*npol, m, k, (1.d0, 0.d0) , evq, &
             npwx*npol, ps, nbnd, (1.d0, 0.d0) , hpsi, npwx*npol)
     ELSE
-       CALL zgemm ('N', 'N', n, m, k, (1.d0, 0.d0) , evq, &
+       CALL myzgemm ('N', 'N', n, m, k, (1.d0, 0.d0) , evq, &
             npwx, ps, nbnd, (1.d0, 0.d0) , hpsi, npwx)
     END IF
     !$acc end host_data
@@ -231,9 +221,7 @@ CONTAINS
        CALL calbec (offload_type, n, vkb, hpsi, becp, m)
     endif
     CALL stop_clock_gpu ('ch_psi_calbec')
-    !$acc host_data use_device(hpsi, spsi)
     CALL s_psi_acc (npwx, n, m, hpsi, spsi)
-    !$acc end host_data
     !$acc parallel loop collapse(2) present(ah, spsi)
     DO ibnd = 1, m
        DO ig = 1, n

@@ -1,9 +1,11 @@
 *.pyc
 *.so
 *.egg-info/
+/.coverage*
 /.tox
 /.pytest_cache/
 /build
 /dist/
-/docs/build/
+/doc/build/
 /poetry.lock
+/wiki/

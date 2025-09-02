@@ -71,16 +71,18 @@ function run_scs(geom, alpha, damp, dalpha_scs, grad) result(alpha_scs)
         dsigma=grad%dalpha, &
         dr_vdw=grad%dr_vdw &
     )
+    call geom%clock(30)
     T = dipole_matrix(geom, damp_local, dT, grad_req)
+    call geom%clock(-30)
     if (geom%has_exc()) return
     if (grad%any()) then
         call alpha_full%copy_from(T)
     else
         call alpha_full%move_from(T)
     end if
-    call alpha_full%add_diag(1d0/alpha)
+    call alpha_full%add_diag(1d0 / alpha)
     call geom%clock(32)
-    call alpha_full%invh(geom%exc)
+    call alpha_full%invh(geom%exc, clock=geom%timer)
     if (geom%has_exc()) return
     call geom%clock(-32)
     alpha_scs = alpha_full%contract_n33diag_cols()
@@ -90,8 +92,9 @@ function run_scs(geom, alpha, damp, dalpha_scs, grad) result(alpha_scs)
         return
     end if
     if (.not. grad%any()) return
-    allocate (alpha_prime(3, 3*n_atoms), source=0d0)
-    allocate (B_prime(3*n_atoms, 3), source=0d0)
+    call geom%clock(33)
+    allocate (alpha_prime(3, 3 * n_atoms), source=0d0)
+    allocate (B_prime(3 * n_atoms, 3), source=0d0)
     allocate (grads_i(n_atoms))
     call alpha_full%contract_n_transp('R', alpha_prime)
     call dQ%init_from(T)
@@ -101,7 +104,10 @@ function run_scs(geom, alpha, damp, dalpha_scs, grad) result(alpha_scs)
         end do
         do i_xyz = 1, 3
             dQ%val = -dT%dr(:, :, i_xyz)
+            call geom%clock(14)
             dQ = alpha_full%mmul(dQ)
+            call geom%clock(-14)
+            call geom%clock(15)
             call dQ%contract_n_transp('C', B_prime)
             do i_atom = 1, n_atoms
                 grads_i = contract_cross_33( &
@@ -113,6 +119,7 @@ function run_scs(geom, alpha, damp, dalpha_scs, grad) result(alpha_scs)
                         grads_i(geom%idx%j_atom)
                 end if
             end do
+            call geom%clock(-15)
         end do
     end if
     if (grad%dlattice) then
@@ -122,25 +129,32 @@ function run_scs(geom, alpha, damp, dalpha_scs, grad) result(alpha_scs)
         do i_latt = 1, 3
             do i_xyz = 1, 3
                 dQ%val = -dT%dlattice(:, :, i_latt, i_xyz)
+                call geom%clock(14)
                 dQ = alpha_full%mmul(dQ)
                 dQ = dQ%mmul(alpha_full)
+                call geom%clock(-14)
+                call geom%clock(15)
                 dalphadA = dQ%contract_n33diag_cols()
-                do concurrent (my_i_atom = 1:size(geom%idx%i_atom))
+                do concurrent(my_i_atom=1:size(geom%idx%i_atom))
                     dalpha_scs(my_i_atom)%dlattice(i_latt, i_xyz) &
                         = dalphadA(geom%idx%i_atom(my_i_atom))
                 end do
+                call geom%clock(-15)
             end do
         end do
     end if
     if (grad%dalpha) then
         dQ%val = dT%dsigma
         do i_atom = 1, n_atoms
-            dsij_dsi = damp_local%sigma(i_atom)*dsigma_dalpha(i_atom) / &
-                sqrt(damp_local%sigma(i_atom)**2+damp_local%sigma**2)
+            dsij_dsi = damp_local%sigma(i_atom) * dsigma_dalpha(i_atom) / &
+                sqrt(damp_local%sigma(i_atom)**2 + damp_local%sigma**2)
             call dQ%mult_col(i_atom, dsij_dsi)
         end do
-        call dQ%add_diag(-0.5d0/alpha**2)
+        call dQ%add_diag(-0.5d0 / alpha**2)
+        call geom%clock(14)
         dQ = alpha_full%mmul(dQ)
+        call geom%clock(-14)
+        call geom%clock(15)
         call dQ%contract_n_transp('C', B_prime)
         do i_atom = 1, n_atoms
             grads_i = contract_cross_33( &
@@ -151,10 +165,14 @@ function run_scs(geom, alpha, damp, dalpha_scs, grad) result(alpha_scs)
                 dalpha_scs(my_i_atom)%dalpha = grads_i(geom%idx%j_atom)
             end if
         end do
+        call geom%clock(-15)
     end if
     if (grad%dr_vdw) then
         dQ%val = dT%dvdw
+        call geom%clock(14)
         dQ = alpha_full%mmul(dQ)
+        call geom%clock(-14)
+        call geom%clock(15)
         call dQ%contract_n_transp('C', B_prime)
         do i_atom = 1, n_atoms
             grads_i = contract_cross_33( &
@@ -165,7 +183,9 @@ function run_scs(geom, alpha, damp, dalpha_scs, grad) result(alpha_scs)
                 dalpha_scs(my_i_atom)%dr_vdw = grads_i(geom%idx%j_atom)
             end if
         end do
+        call geom%clock(-15)
     end if
+    call geom%clock(-33)
 end function
 
 end module

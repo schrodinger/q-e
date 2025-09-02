@@ -1,17 +1,16 @@
-cmake_minimum_required(VERSION 3.1)
+cmake_minimum_required(VERSION 3.14)
 cmake_policy(SET CMP0042 NEW)
-if(NOT CMAKE_VERSION VERSION_LESS 3.13)
-    cmake_policy(SET CMP0077 NEW)
-endif()
+cmake_policy(SET CMP0077 NEW)
 
 set(CMAKE_USER_MAKE_RULES_OVERRIDE_Fortran
   "${CMAKE_CURRENT_SOURCE_DIR}/cmake/fortran_flags_override.cmake")
 
-project(Libmbd
-    VERSION 0.10.3
+project(libMBD
     DESCRIPTION "Many-body dispersion library"
     LANGUAGES Fortran C)
 
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+include(libMBDVersion)
 include(GNUInstallDirs)
 include(CMakeDependentOption)
 include(CTest)
@@ -31,65 +30,78 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE "${DEFAULT_BUILD_TYPE}")
 endif()
 
-separate_arguments(MKL_LIBRARIES)
-if(NOT LAPACK_LIBRARIES AND NOT MKL_LIBRARIES)
-    find_package(LAPACK)
-    if(NOT LAPACK_FOUND)
-        message(SEND_ERROR "BLAS/LAPACK not found, specify custom installation with \
-LAPACK_LIBRARIES or MKL_LIBRARIES variable")
+if(NOT TARGET LAPACK::LAPACK)
+    find_package(LAPACK REQUIRED)
+    if(CMAKE_VERSION VERSION_LESS 3.18)
+        add_library(LAPACK::LAPACK INTERFACE IMPORTED)
+        target_link_libraries(LAPACK::LAPACK INTERFACE ${LAPACK_LINKER_FLAGS} ${LAPACK_LIBRARIES})
     endif()
 endif()
 
 if(ENABLE_SCALAPACK_MPI)
-    find_package(MPI)
-    if(NOT MPI_Fortran_FOUND)
-        message(SEND_ERROR "MPI not found, specify the MPI Fortran compiler with \
-MPI_Fortran_COMPILER variable")
+    if(NOT TARGET MPI::MPI_Fortran)
+        find_package(MPI REQUIRED)
+        if(APPLE)
+            # -flat_namespace (Darwin-specific) is causing a crash (seg fault) when the
+            # Fortran library is called from Python and one writes into a character
+            # variable, but only when the kind is the default one. It causes the
+            # written to variable to appear as being four times shorter than it is.
+            # Only mention of anything possibly related I could find is at
+            #
+            #   https://trac.mpich.org/projects/mpich/ticket/1590
+            get_target_property(_VALUE MPI::MPI_Fortran INTERFACE_LINK_OPTIONS)
+            string(REGEX REPLACE "-Wl\\$<COMMA>-flat_namespace ?" "" _VALUE "${_VALUE}")
+            set_target_properties(MPI::MPI_Fortran PROPERTIES INTERFACE_LINK_OPTIONS "${_VALUE}")
+        endif()
     endif()
-    if(APPLE)
-        # -flat_namespace (Darwin-specific) is causing a crash (seg fault) when the
-        # Fortran library is called from Python and one writes into a character
-        # variable, but only when the kind is the default one. It causes the
-        # written to variable to appear as being four times shorter than it is.
-        # Only mention of anything possibly related I could find is at
-        #
-        #   https://trac.mpich.org/projects/mpich/ticket/1590
-        string(REPLACE "-Wl,-flat_namespace" ""
-            MPI_Fortran_LINK_FLAGS "${MPI_Fortran_LINK_FLAGS}")
-        string(STRIP "${MPI_Fortran_LINK_FLAGS}" MPI_Fortran_LINK_FLAGS)
+    if(MPI_Fortran_HAVE_F08_MODULE)
+        message(STATUS "Will use the mpi_f08 Fortran module")
     endif()
-    if(NOT SCALAPACK_LIBRARIES AND NOT MKL_LIBRARIES)
-        find_package(PkgConfig)
-        if(PkgConfig_FOUND)
-            pkg_search_module(scalapack scalapack scalapack-openmpi)
-            if(scalapack_FOUND)
-                message(STATUS "ScaLAPACK pkg-config package found, version ${scalapack_VERSION}")
-                set(SCALAPACK_LIBRARIES "${scalapack_LDFLAGS}")
+    if(NOT TARGET scalapack AND NOT DEFINED SCALAPACK_LIBRARY)
+        find_package(scalapack QUIET)
+        if(scalapack_FOUND)
+            message(STATUS "ScaLAPACK CMake package found in ${scalapack_DIR}")
+        else()
+            find_package(PkgConfig)
+            if(PkgConfig_FOUND)
+                unset(scalapack_FOUND CACHE)
+                pkg_search_module(scalapack scalapack scalapack-openmpi)
+                if(scalapack_FOUND)
+                    message(STATUS "ScaLAPACK pkg-config package found, version ${scalapack_VERSION}")
+                    set(SCALAPACK_LIBRARY "${scalapack_LDFLAGS}")
+                endif()
             endif()
         endif()
         if(NOT scalapack_FOUND)
-            unset(scalapack_FOUND CACHE)
-            find_package(scalapack QUIET)
-            if(scalapack_FOUND)
-                message(STATUS "ScaLAPACK CMake package found in ${scalapack_DIR}")
-            endif()
+            message(SEND_ERROR "ScaLAPACK Cmake or pkg-config package not found, \
+specify custom installation with SCALAPACK_LIBRARY")
         endif()
-        if(NOT scalapack_FOUND)
-            message(SEND_ERROR "ScaLAPACK pkg-config or Cmake package not found, \
-specify custom installation with SCALAPACK_LIBRARIES or MKL_LIBRARIES variable")
-        endif()
+    endif()
+    if(NOT TARGET scalapack AND DEFINED SCALAPACK_LIBRARY)
+        add_library(scalapack INTERFACE IMPORTED)
+        target_link_libraries(scalapack INTERFACE "${SCALAPACK_LIBRARY}")
     endif()
 endif()
 
-if(ENABLE_ELSI)
-    if(NOT ELSI_LIBRARIES)
-        find_package(elsi 2.0 QUIET)
-        if(elsi_FOUND)
-            message(STATUS "ELSI CMake package found in ${elsi_DIR}")
-        else()
-            message(SEND_ERROR "ELSI CMake package not found, specify custom \
-installation with ELSI_LIBRARIES variable")
+if(ENABLE_ELSI AND NOT TARGET elsi::elsi)
+    find_package(elsi 2.0 QUIET)
+    if(elsi_FOUND)
+        message(STATUS "ELSI CMake package found in ${elsi_DIR}")
+    else()
+        find_package(PkgConfig)
+        if(PkgConfig_FOUND)
+            unset(elsi_FOUND CACHE)
+            pkg_search_module(elsi elsi)
+            if(elsi_FOUND)
+                message(STATUS "ELSI pkg-config package found, version ${elsi_VERSION}")
+                add_library(elsi::elsi INTERFACE IMPORTED)
+                target_link_libraries(elsi::elsi INTERFACE "${elsi_LINK_LIBRARIES}")
+                target_include_directories(elsi::elsi INTERFACE "${elsi_INCLUDE_DIRS}")
+            endif()
         endif()
+    endif()
+    if(NOT elsi_FOUND)
+        message(SEND_ERROR "ELSI Cmake or pkg-config package not found")
     endif()
 endif()
 

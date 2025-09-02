@@ -125,6 +125,7 @@ PROGRAM do_projwfc
   CALL mp_bcast( lbinary_data,    ionode_id, intra_image_comm )
   CALL mp_bcast( lgww,      ionode_id, intra_image_comm )
   CALL mp_bcast( pawproj,   ionode_id, intra_image_comm )
+  CALL mp_bcast( kresolveddos,    ionode_id, intra_image_comm )
   CALL mp_bcast( tdosinboxes,     ionode_id, intra_image_comm )
   CALL mp_bcast( n_proj_boxes,    ionode_id, intra_image_comm )
   CALL mp_bcast( irmin,     ionode_id, intra_image_comm )
@@ -898,7 +899,7 @@ SUBROUTINE projwave( filproj, filowdin, lsym, diag_basis, lwrite_ovp )
         !    AlexS - To project on real harmonics, not on spinors.  
         CALL atomic_wfc_nc_updown(ik, wfcatom)
      ELSE IF ( noncolin ) THEN
-        CALL atomic_wfc_nc_proj (ik, wfcatom)
+        CALL atomic_wfc_nc_proj(ik, wfcatom)
      ELSE
         CALL atomic_wfc (ik, wfcatom)
      ENDIF

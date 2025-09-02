@@ -55,7 +55,6 @@ SUBROUTINE lr_readin
   USE constants,           ONLY : eps4, rytoev
   USE control_lr,          ONLY : lrpa, alpha_mix, ethr_nscf
   USE mp_world,            ONLY : world_comm
-  USE scf_gpum,            ONLY: vrs_d
 #if defined (__ENVIRON)
   USE plugin_flags,          ONLY : use_environ
   USE environ_base_module,   ONLY : read_environ_input, init_environ_setup, &
@@ -90,9 +89,9 @@ SUBROUTINE lr_readin
                         & force_real_alpha, force_zero_alpha, lan_precondition 
   NAMELIST / lr_post /    omeg, beta_gamma_z_prefix, w_T_npol, plot_type, epsil, itermax_int,sum_rule
   namelist / lr_dav /     num_eign, num_init, num_basis_max, residue_conv_thr, precondition,         &
-                        & dav_debug, reference,single_pole, sort_contr, diag_of_h, close_pre,        &
-                        & broadening,print_spectrum,start,finish,step,if_check_orth, if_random_init, &
-                        & if_check_her,p_nbnd_occ,p_nbnd_virt,poor_of_ram,poor_of_ram2,max_iter,     &
+                        & reference,single_pole, sort_contr, diag_of_h, close_pre,        &
+                        & broadening,print_spectrum,start,finish,step, if_random_init, &
+                        & p_nbnd_occ,p_nbnd_virt,poor_of_ram,poor_of_ram2,max_iter,     &
                         & conv_assistant,if_dft_spectrum,no_hxc,d0psi_rs,lshift_d0psi,               &
                         & lplot_drho, vccouple_shift, ltammd
   !
@@ -175,7 +174,6 @@ SUBROUTINE lr_readin
      close_pre=1.0E-5
      turn2planb=1.0E-3
      precondition=.true.
-     dav_debug=.false.
      reference=0.0d0
      vccouple_shift=0.0d0
      single_pole=.false.
@@ -184,8 +182,6 @@ SUBROUTINE lr_readin
      start=0.0d0
      finish=1.0d0
      step=0.001d0
-     if_check_orth=.false.
-     if_check_her=.false.
      if_random_init=.false.
      p_nbnd_occ=10
      p_nbnd_virt=10
@@ -355,6 +351,21 @@ SUBROUTINE lr_readin
         !
      ENDIF
      !
+     IF (davidson) THEN
+        !
+        ! check and set num_init and num_basis_max
+        !
+        IF (num_init < num_eign ) THEN
+           WRITE(stdout,'(5X,"num_init is too small, set to num_init = 2*num_eign")')
+           num_init = 2 * num_eign
+        ENDIF
+        IF (num_basis_max < 2*num_init ) THEN
+           WRITE(stdout,'(5X,"num_basis_max is too small, set to num_basis_max = 4*num_init")')     
+           num_basis_max = 4 * num_init
+        ENDIF   
+        !
+     ENDIF
+     !
 #if defined(__MPI)
   ENDIF
   !
@@ -489,9 +500,6 @@ SUBROUTINE lr_readin
   ! vrs = vltot + v%of_r
   !
   CALL set_vrs ( vrs, vltot, v%of_r, 0, 0, dfftp%nnr, nspin, doublegrid )
-#if defined(__CUDA)  
-  vrs_d = vrs     
-#endif
   !
   DEALLOCATE( vltot )
   CALL destroy_scf_type(v)
@@ -662,6 +670,9 @@ CONTAINS
           call errore('lr_readin', 'Magnons linear response calculation ' // &
                      & 'is not implemented with symmetry', 1 )
        ENDIF
+       IF (.not. domag) &
+          CALL errore ('lr_readin', ' Magnons linear response calculation ' // &
+                      & 'non-magnetic system', 1 )
     ENDIF
     !
     RETURN

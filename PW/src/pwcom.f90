@@ -1,5 +1,5 @@
 !
-! Copyright (C) 2001-2012 Quantum ESPRESSO group
+! Copyright (C) 2001-2025 Quantum ESPRESSO group
 ! This file is distributed under the terms of the
 ! GNU General Public License. See the file `License'
 ! in the root directory of the present distribution,
@@ -17,10 +17,6 @@ MODULE klist
   !
   SAVE
   !
-  !FIXME !TODO variables as igk_k, mill, g and others persist in the device memory
-  ! for the whole duration of the run, their allocation in the device should be
-  ! done using !$acc declare create () instead of using !$acc enter/exit data create/delete().
-  !
   CHARACTER (LEN=32) :: smearing
   !! smearing type
   REAL(DP) :: xk(3,npk)
@@ -32,11 +28,11 @@ MODULE klist
   REAL(DP) :: degauss
   !! smearing parameter
   REAL(DP) :: degauss_cond
-  !! smeraing parameter for the conduction band in the case of two chemical potentials
+  !! smearing parameter for conduction bands in the case of two chemical potentials
   REAL(DP) :: nelec
   !! number of electrons
   REAL(DP) :: nelec_cond
-  !! number of electrons in the conudction bad in the case of two chemical potentials 
+  !! number of electrons in the conduction bands in the case of two chemical potentials 
   REAL(DP) :: nelup=0.0_dp
   !! number of spin-up electrons (if two_fermi_energies=t)
   REAL(DP) :: neldw=0.0_dp
@@ -46,7 +42,7 @@ MODULE klist
   REAL(DP) :: tot_charge
   !! total charge
   REAL(DP) :: qnorm= 0.0_dp
-  !! |q|, used in phonon+US calculations only
+  !! |q|, used in EXX+US and phonon+US calculations only
   INTEGER, ALLOCATABLE :: igk_k(:,:)
   !! index of G corresponding to a given index of k+G
   INTEGER, ALLOCATABLE :: ngk(:)
@@ -66,7 +62,7 @@ MODULE klist
   LOGICAL :: ltetra
   !! if .TRUE.: use tetrahedra
   LOGICAL :: lxkcry=.FALSE.
-  !! if .TRUE.:k-pnts in cryst. basis accepted in input
+  !! if .TRUE.:k-points in cryst. basis accepted in input
   LOGICAL :: two_fermi_energies
   !! if .TRUE.: nelup and neldw set ef_up and ef_dw separately
   !
@@ -261,8 +257,6 @@ MODULE vlocal
   !! the structure factor
   REAL(DP), ALLOCATABLE :: vloc(:,:)
   !! the local potential for each atom type
-  REAL(DP) :: starting_charge(ntypx)
-  !! the atomic charge used to start with
   !
 END MODULE vlocal
 !
@@ -315,16 +309,17 @@ MODULE ener
   REAL(DP) :: hwf_energy
   !! this is the Harris-Weinert-Foulkes energy
   REAL(DP) :: eband
-  !! the band energy
+  !! the band energy: eband  = \sum_i \epsilon_i (calculated by sum_band)
   REAL(DP) :: deband
-  !! scf correction to have variational energy
+  !!  deband is minus the Hartree+XC energy term:
+  !!  deband = -\sum_i <\psi_i|V_h + V_xc|\psi_i>, or equivalently
+  !!  deband = -\int (v_H(r) + v_{xc}(r)) n(r) dr
+  !! eband + deband = kinetic + external potential energy
   REAL(DP) :: ehart
   !! the Hartree energy
   REAL(DP) :: etxc
   !! the exchange and correlation energy
   REAL(DP) :: vtxc
-  !! another exchange-correlation energy
-  REAL(DP) :: etxcc
   !! the nlcc exchange and correlation
   REAL(DP) :: ewld
   !! the ewald energy
@@ -335,11 +330,11 @@ MODULE ener
   REAL(DP) :: exdm
   !! the XDM dispersion energy
   REAL(DP) :: demet
-  !! the sic energy
-  REAL(DP) :: esic
-  !! the scissor energy
-  REAL(DP) :: esci
   !! variational correction ("-TS") for metals
+  REAL(DP) :: esic
+  !! the sic energy
+  REAL(DP) :: esci
+  !! the scissor energy
   REAL(DP) :: epaw
   !! sum of one-center paw contributions
   REAL(DP) :: ef
@@ -356,6 +351,8 @@ MODULE ener
   !! another solvation energy, from 3D-RISM
   REAL(DP) :: ef_cond
   !! the conduction band chemical potential for a two chemical potential simulation
+  REAL(DP) :: etxcc = 0.0
+  !! obsolete exchange-correlation energy term for core correction - unused
   !
 END MODULE ener
 !
@@ -376,10 +373,8 @@ MODULE force_mod
   REAL(DP) :: sigma(3,3)
   !! the stress acting on the system
   REAL(DP), ALLOCATABLE :: eigenval(:)
-  !$acc declare device_resident(eigenval)
   !! eigenvalues of the overlap matrix
   COMPLEX(DP), ALLOCATABLE :: eigenvect(:,:)
-  !$acc declare device_resident(eigenvect)
   !! eigenvectors of the overlap matrix
   COMPLEX(DP), ALLOCATABLE :: overlap_inv(:,:)
   !! overlap matrix (transposed): (O^{-1/2})^T

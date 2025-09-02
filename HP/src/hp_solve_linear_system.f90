@@ -1,5 +1,5 @@
 !
-! Copyright (C) 2001-2023 Quantum ESPRESSO group
+! Copyright (C) 2001-2025 Quantum ESPRESSO group
 ! This file is distributed under the terms of the
 ! GNU General Public License. See the file `License'
 ! in the root directory of the present distribution,
@@ -22,7 +22,7 @@ SUBROUTINE hp_solve_linear_system (na, iq)
   USE wavefunctions,        ONLY : evc
   USE klist,                ONLY : lgauss, ltetra, nelec, ngk
   USE gvecs,                ONLY : doublegrid
-  USE scf,                  ONLY : rho
+  USE scf,                  ONLY : rho, v, vrs
   USE fft_base,             ONLY : dfftp, dffts
   USE lsda_mod,             ONLY : lsda, current_spin, isk
   USE wvfct,                ONLY : nbnd, npwx
@@ -45,17 +45,18 @@ SUBROUTINE hp_solve_linear_system (na, iq)
   USE fft_helper_subroutines
   USE fft_interfaces,       ONLY : fft_interpolate
   USE lr_symm_base,         ONLY : irotmq, minus_q, nsymq, rtau
-  USE ldaU_lr,              ONLY : dnsscf
+  USE ldaU_lr,              ONLY : dnsscf, vh_u_save, vh_uv_save
   USE ldaU_hp,              ONLY : thresh_init, dns0, trace_dns_tot_old, &
                                    conv_thr_chi_best, iter_best, niter_max, nmix, &
-                                   alpha_mix, code, lrdvwfc, iudvwfc
+                                   alpha_mix, code, lrdvwfc, iudvwfc, no_metq0
   USE apply_dpot_mod,       ONLY : apply_dpot_allocate, apply_dpot_deallocate
   USE efermi_shift,         ONLY : ef_shift, def
   USE response_kernels,     ONLY : sternheimer_kernel
-  USE hp_nc_mag_aux,        ONLY : deeq_nc_save, int3_save   
-  USE qpoint_aux,           ONLY : ikmks, ikmkmqs, becpt  
-  USE lsda_mod,             ONLY : nspin     
-  USE scf,                  ONLY : vrs    
+  USE qpoint_aux,           ONLY : ikmks, ikmkmqs, becpt
+  USE lsda_mod,             ONLY : nspin
+  USE lr_nc_mag,            ONLY : lr_apply_time_reversal, deeq_nc_save, int3_nc_save
+  USE lr_symm_base,         ONLY : lr_npert, upert, upert_mq
+  USE ldaU,                 ONLY : lda_plus_u_kind, nsg, v_nsg
   !
   IMPLICIT NONE
   !
@@ -108,6 +109,7 @@ SUBROUTINE hp_solve_linear_system (na, iq)
              ik, ikk,    & ! counter on k points
              ndim,       &
              is,         & ! counter on spin polarizations
+             isym,       & ! counter on symmetries
              npw,        & ! number of plane waves at k
              nsolv,      & ! number of linear systems
              isolv,      & ! counter on linear systems    
@@ -126,7 +128,7 @@ SUBROUTINE hp_solve_linear_system (na, iq)
   !
   ! Allocate arrays for the SCF density/potential
   !
-  ALLOCATE (drhoscf (dfftp%nnr, nspin_mag)) 
+  ALLOCATE (drhoscf (dffts%nnr, nspin_mag))
   ALLOCATE (drhoscfh(dfftp%nnr, nspin_mag))
   ALLOCATE (dvscfin (dfftp%nnr, nspin_mag))
   ALLOCATE (dvscfout(dfftp%nnr, nspin_mag))
@@ -148,6 +150,18 @@ SUBROUTINE hp_solve_linear_system (na, iq)
   !
   ALLOCATE (dbecsum((nhm*(nhm+1))/2, nat, nspin_mag, 1))
   !
+  ! Set symmetry representation in lr_symm_base
+  !
+  lr_npert = 1
+  ALLOCATE(upert(lr_npert, lr_npert, nsymq))
+  DO isym = 1, nsymq
+     upert(1, 1, isym) = (1.d0, 0.d0)
+  ENDDO
+  IF (minus_q) THEN
+     ALLOCATE(upert_mq(lr_npert, lr_npert))
+     upert_mq(1, 1) = (1.d0, 0.d0)
+  ENDIF ! minus_q
+  !
   nsolv=1
   IF (noncolin.AND.domag) nsolv=2   
   !
@@ -155,7 +169,7 @@ SUBROUTINE hp_solve_linear_system (na, iq)
   IF (noncolin) ALLOCATE (dbecsum_nc (nhm,nhm, nat , nspin , 1, nsolv))
   !
   IF (noncolin.and.domag.and.okvan) THEN
-    ALLOCATE (int3_save( nhm, nhm, nat, nspin_mag, 1, 2))
+    ALLOCATE (int3_nc_save( nhm, nhm, nat, nspin_mag, 1, 2))
     ALLOCATE (dbecsum_aux ( (nhm * (nhm + 1))/2 , nat , nspin_mag , 1))
   ENDIF
   !
@@ -185,6 +199,15 @@ SUBROUTINE hp_solve_linear_system (na, iq)
   ! If q=0 for a metal: allocate and compute local DOS and DOS at Ef
   !
   lmetq0 = (lgauss .OR. ltetra) .AND. lgamma
+  !
+  ! If the user specified in the input that no_metq0=.true. this means
+  ! we want to force remove the metallic term at q=0 (e.g. for magnetic insulators
+  ! when the smearing is used). We remove the last term in Eq. (22) 
+  ! in PRB 103, 045141 (2021) (and also for the response charge density), 
+  ! otherwise this term can diverge for magnetic insulators
+  ! due to a division by DOS(E_Fermi) which can be vanishing.
+  !
+  IF (no_metq0) lmetq0 = .FALSE.
   !
   IF (lmetq0) THEN
      ALLOCATE (ldos (dfftp%nnr, nspin_mag))
@@ -244,12 +267,11 @@ SUBROUTINE hp_solve_linear_system (na, iq)
         !  change the sign of the magnetic field if required
         !
         IF (isolv == 2) THEN
-           IF ( iter > 1 ) THEN
-              dvscfins(:, 2:4, :) = -dvscfins(:, 2:4, :)
-              IF (okvan) int3_nc(:,:,:,:,:) = int3_save(:,:,:,:,:,2)
+           IF (lda_plus_u_kind == 0) THEN
+              v%ns_nc (:,:,:,:) = vh_u_save(:,:,:,:,2)
+           ELSEIF (lda_plus_u_kind == 2) THEN
+              v_nsg(:,:,:,:,:) = vh_uv_save(:,:,:,:,:,2)
            ENDIF
-           vrs(:, 2:4) = -vrs(:, 2:4)
-           IF (okvan) deeq_nc(:,:,:,:) = deeq_nc_save(:,:,:,:,2)
         ENDIF
         !
         ! set threshold for iterative solution of the linear system
@@ -279,13 +301,13 @@ SUBROUTINE hp_solve_linear_system (na, iq)
         !  reset the original magnetic field if it was changed
         !
         IF (isolv == 2) THEN
-           IF ( iter > 1 ) THEN
-              dvscfins(:, 2:4, :) = -dvscfins(:, 2:4, :)
-              IF (okvan) int3_nc(:,:,:,:,:) = int3_save(:,:,:,:,:,1)
+           IF (lda_plus_u_kind == 0) THEN
+               v%ns_nc (:,:,:,:) = vh_u_save(:,:,:,:,1)
+           ELSEIF(lda_plus_u_kind == 2) THEN
+               v_nsg (:,:,:,:,:) = vh_uv_save(:,:,:,:,:,1)
            ENDIF
-           vrs(:, 2:4) = -vrs(:, 2:4)
-           IF (okvan) deeq_nc(:,:,:,:) = deeq_nc_save(:,:,:,:,1)
         ENDIF
+        !
      ENDDO ! isolv
      !
      IF (nsolv==2) THEN
@@ -402,7 +424,7 @@ SUBROUTINE hp_solve_linear_system (na, iq)
      ! Compute the response potential dV_HXC from the response charge density.
      ! See Eq. (47) in Ref. [1]
      !
-     CALL dv_of_drho (dvscfout, .FALSE.)
+     CALL dv_of_drho (dvscfout)
      !
      ! Mix the new HXC response potential (dvscfout) with the old one (dvscfin).
      ! Note: dvscfin = 0 for iter = 1 (so there is no mixing).
@@ -446,7 +468,7 @@ SUBROUTINE hp_solve_linear_system (na, iq)
         CALL newdq (dvscfin, 1)
         IF (noncolin.AND.domag) then
            !
-           int3_save(:,:,:,:,:,1)=int3_nc(:,:,:,:,:)
+           int3_nc_save(:,:,:,:,:,1)=int3_nc(:,:,:,:,:)
            !
            dvscfin(:,2:4) = -dvscfin(:,2:4)
            IF (okpaw) THEN 
@@ -460,7 +482,7 @@ SUBROUTINE hp_solve_linear_system (na, iq)
            IF (okpaw) CALL PAW_dpotential(dbecsum,rho%bec,int3_paw,1)
            !
            CALL newdq (dvscfin, 1)
-           int3_save(:,:,:,:,:,2) = int3_nc(:,:,:,:,:)
+           int3_nc_save(:,:,:,:,:,2) = int3_nc(:,:,:,:,:)
            !
            !  restore the correct sign of the magnetic field.
            !
@@ -472,7 +494,7 @@ SUBROUTINE hp_solve_linear_system (na, iq)
            !
            !  put into int3_nc the coefficient with +B
            !
-           int3_nc(:,:,:,:,:)=int3_save(:,:,:,:,:,1)
+           int3_nc(:,:,:,:,:)=int3_nc_save(:,:,:,:,:,1)
         ENDIF
      ENDIF
      !
@@ -519,10 +541,12 @@ SUBROUTINE hp_solve_linear_system (na, iq)
   DEALLOCATE (dvscfin)
   DEALLOCATE (dvscfout)
   DEALLOCATE (trace_dns_tot_old)
+  DEALLOCATE (upert)
+  IF (minus_q) DEALLOCATE(upert_mq)
   !
   IF (ALLOCATED(dbecsum_nc)) DEALLOCATE (dbecsum_nc)
   IF (ALLOCATED(int3_nc)) DEALLOCATE(int3_nc)
-  IF (ALLOCATED(int3_save)) DEALLOCATE (int3_save)
+  IF (ALLOCATED(int3_nc_save)) DEALLOCATE (int3_nc_save)
   IF (ALLOCATED(dbecsum_aux)) DEALLOCATE (dbecsum_aux)
   !
   !$acc exit data delete(dvscfins)

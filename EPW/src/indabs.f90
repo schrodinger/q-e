@@ -23,7 +23,7 @@
   CONTAINS
     !
     !-----------------------------------------------------------------------
-    SUBROUTINE indabs_main(iq, totq, first_cycle, iq_restart)
+    SUBROUTINE indabs_main(iqq, iq, totq, first_cycle, iq_restart)
     !-----------------------------------------------------------------------
     !!
     !! Main routine for phonon assisted absorption
@@ -32,27 +32,29 @@
     USE io_global,     ONLY : stdout, ionode_id
     USE io_var,        ONLY : iuindabs
     USE modes,         ONLY : nmodes
-    USE epwcom,        ONLY : nstemp, fsthick, degaussw, &
-                              eps_acustic, efermi_read, fermi_energy,&
-                              vme, omegamin, omegamax, omegastep, carrier, &
+    USE input,         ONLY : nstemp, fsthick, degaussw, &
+                              eps_acoustic, efermi_read, fermi_energy,&
+                              omegamin, omegamax, omegastep, carrier, &
                               nomega, neta, restart, restart_step, &
                               ii_g, ii_n, ii_lscreen
-    USE elph2,         ONLY : etf, ibndmin, nkf, epf17, wkf, nqtotf, wf, wqf, &
-                              sigmar_all, efnew, gtemp, &
-                              dmef, omegap, epsilon2_abs, epsilon2_abs_lorenz, vmef, &
+    USE global_var,    ONLY : etf, ibndmin, nkf, epf17, wkf, nqtotf, wf, wqf, efnew, &
+                              gtemp, omegap, epsilon2_abs, epsilon2_abs_lorenz, vmef, &
                               nbndfst, nktotf, ef0_fca, partion, &
                               epsilon2_abs_all, epsilon2_abs_lorenz_all, epstf_therm, &
-                              epsilon2_abs_imp, epsilon2_abs_lorenz_imp, eimpf17
-    USE constants_epw, ONLY : kelvin2eV, ryd2mev, one, ryd2ev, two, zero, pi, ci, eps6, czero, &
+                              epsilon2_abs_imp, epsilon2_abs_lorenz_imp, eimpf17, startq, lastq
+    USE ep_constants,  ONLY : kelvin2eV, ryd2mev, one, ryd2ev, two, zero, pi, ci, eps6, czero, &
                               bohr2ang, ang2cm
     USE mp,            ONLY : mp_barrier, mp_sum
     USE mp_world,      ONLY : mpime
-    USE mp_global,     ONLY : inter_pool_comm
+    USE mp_global,     ONLY : inter_pool_comm, my_pool_id, my_image_id
+    USE mp_images,     ONLY : inter_image_comm, nimage
     USE cell_base,     ONLY : omega
     USE io_indabs,     ONLY : indabs_write
     !
     IMPLICIT NONE
     !
+    INTEGER, INTENT(in) :: iqq
+    !! q-point index, counter
     INTEGER, INTENT(in) :: iq
     !! Q-point index
     INTEGER, INTENT(in) :: iq_restart
@@ -86,10 +88,10 @@
     !! Counter on mode
     INTEGER :: nksqtotf
     !! Total number of k+q points
+    INTEGER :: qtot_image
+    !! Total number of qpoints through images
     INTEGER :: iw
     !! Index for frequency
-!    INTEGER :: nomega
-    !! Number of points on the photon energy axis
     INTEGER :: mbnd
     !! Index for summation over intermediate bands
     INTEGER :: ipol
@@ -100,8 +102,6 @@
     !! Counter on temperatures
     INTEGER :: ierr
     !! Error status
-!    INTEGER, PARAMETER :: neta = 9
-    !! Broadening parameter
     REAL(KIND = DP) :: ekk
     !! Eigen energy on the fine grid relative to the Fermi level
     REAL(KIND = DP) :: ekq
@@ -134,8 +134,6 @@
     !! Inverse of thermal eps
     REAL(KIND = DP) :: eta(9) = (/ 0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5 /) / ryd2eV
     !! Imaginary broadening of matrix element denominators
-    REAL(KIND = DP) :: etemp_fca
-    !! Temperature for fermi level calculation
     REAL(KIND = DP), EXTERNAL :: dos_ef
     !! Function to compute the Density of States at the Fermi level
     REAL(KIND = DP), EXTERNAL :: wgauss
@@ -160,16 +158,13 @@
     !
     inv_degaussw = 1.0 / degaussw
     !
-    ! Done outside
-!    nomega = INT((omegamax - omegamin) / omegastep) + 1
-    !
     ! 300 K
     ! Epsilon2 prefactor for velocity matrix elements, including factor of 2 for spin (weights for k-points are divided by 2 to be normalized to 1)
     ! C = 8*pi^2*e^2 = 8*pi^2*2 approx 157.9136704
     !
     cfac = 16.d0 * pi**2
     !
-    IF (iq == iq_restart) THEN
+    IF (iqq == iq_restart) THEN
       !
       ALLOCATE(omegap(nomega), STAT = ierr)
       IF (ierr /= 0) CALL errore('indabs', 'Error allocating omegap', 1)
@@ -190,7 +185,7 @@
       DO iw = 1, nomega
         omegap(iw) = omegamin + (iw - 1) * omegastep
       ENDDO
-      IF (iq_restart == 1) THEN
+      IF (iq_restart == startq) THEN
         CALL dirabs()
       ENDIF
       WRITE(stdout, '(/5x,a/)') REPEAT('=',67)
@@ -264,30 +259,20 @@
             wq(imode) = wf(imode, iq)
             !
             epf(:, :, imode) = epf17(:, :, imode,ik)
-            IF (wq(imode) > eps_acustic) THEN
+            IF (wq(imode) > eps_acoustic) THEN
               nqv(imode) = wgauss(-wq(imode) / gtemp(itemp), -99)
               nqv(imode) = nqv(imode) / (one - two * nqv(imode))
             ENDIF
           ENDDO
           !
           ! RM - vme version should be checked
-          IF (vme == 'wannier') THEN
-            DO ibnd = 1, nbndfst
-              DO jbnd = 1, nbndfst
-                ! vmef is in units of Ryd * bohr
-                vkk(:, ibnd, jbnd) = vmef(:, ibndmin - 1 + ibnd, ibndmin - 1 + jbnd, ikk)
-                vkq(:, ibnd, jbnd) = vmef(:, ibndmin - 1 + ibnd, ibndmin - 1 + jbnd, ikq)
-              ENDDO
+          DO ibnd = 1, nbndfst
+            DO jbnd = 1, nbndfst
+              ! vmef is in units of Ryd * bohr
+              vkk(:, ibnd, jbnd) = vmef(:, ibndmin - 1 + ibnd, ibndmin - 1 + jbnd, ikk)
+              vkq(:, ibnd, jbnd) = vmef(:, ibndmin - 1 + ibnd, ibndmin - 1 + jbnd, ikq)
             ENDDO
-          ELSE
-            DO ibnd = 1, nbndfst
-              DO jbnd = 1, nbndfst
-                ! Dme's already corrected for GW corrections in wan2bloch.f90
-                vkk(:, ibnd, jbnd) = dmef(:, ibndmin - 1 + ibnd, ibndmin - 1 + jbnd, ikk)
-                vkq(:, ibnd, jbnd) = dmef(:, ibndmin - 1 + ibnd, ibndmin - 1 + jbnd, ikq)
-              ENDDO
-            ENDDO
-          ENDIF
+          ENDDO
           !
           DO ibnd = 1, nbndfst
             !  the energy of the electron at k (relative to Ef)
@@ -311,7 +296,7 @@
                   !
                   DO imode = 1, nmodes
                     !
-                    IF (wq(imode) > eps_acustic) THEN
+                    IF (wq(imode) > eps_acoustic) THEN
                       !
                       DO m = 1, neta
                         s1a = czero
@@ -413,14 +398,21 @@
           ENDDO ! ibnd
         ENDDO ! ik
         IF (restart) THEN
-          IF (MOD(iq, restart_step) == 0 .and. itemp == nstemp) THEN
-            WRITE(stdout, '(5x, a, i10)' ) 'Creation of a restart point at ', iq
+          IF (MOD(iqq, restart_step) == 0 .and. itemp == nstemp) THEN
+            WRITE(stdout, '(5x, a, i10)' ) 'Creation of a restart point at ', iqq
+            CALL mp_barrier(inter_pool_comm)
+            CALL mp_barrier(inter_image_comm)
             CALL mp_sum(epsilon2_abs, inter_pool_comm)
             CALL mp_sum(epsilon2_abs_lorenz, inter_pool_comm)
+            CALL mp_sum(epsilon2_abs, inter_image_comm)
+            CALL mp_sum(epsilon2_abs_lorenz, inter_image_comm)
+            qtot_image = totq
+            CALL mp_sum(qtot_image, inter_image_comm)
             CALL mp_barrier(inter_pool_comm)
+            CALL mp_barrier(inter_image_comm)
             epsilon2_abs_all = epsilon2_abs_all + epsilon2_abs
             epsilon2_abs_lorenz_all = epsilon2_abs_lorenz_all + epsilon2_abs_lorenz
-            CALL indabs_write(iq, totq, epsilon2_abs_all, epsilon2_abs_lorenz_all)
+            CALL indabs_write(iqq, qtot_image, epsilon2_abs_all, epsilon2_abs_lorenz_all)
             epsilon2_abs = 0.d0
             epsilon2_abs_lorenz = 0.d0
           ENDIF
@@ -430,21 +422,29 @@
     !
     ! The k points are distributed among pools: here we collect them
     !
-    IF (iq == nqtotf) THEN
+    IF (iq == lastq) THEN
       !
 #if defined(__MPI)
       !
       ! Note that poolgather2 works with the doubled grid (k and k+q)
       !
       CALL mp_barrier(inter_pool_comm)
+      CALL mp_barrier(inter_image_comm) 
       CALL mp_sum(epsilon2_abs, inter_pool_comm)
+      CALL mp_sum(epsilon2_abs, inter_image_comm)
       CALL mp_sum(epsilon2_abs_lorenz, inter_pool_comm)
+      CALL mp_sum(epsilon2_abs_lorenz, inter_image_comm)
+      CALL mp_barrier(inter_image_comm)
       CALL mp_barrier(inter_pool_comm)
-      IF (carrier .and. ii_g) THEN
+     IF (carrier .and. ii_g) THEN
+        CALL mp_barrier(inter_image_comm)
         CALL mp_barrier(inter_pool_comm)
         CALL mp_sum(epsilon2_abs_imp, inter_pool_comm)
         CALL mp_sum(epsilon2_abs_lorenz_imp, inter_pool_comm)
+        CALL mp_sum(epsilon2_abs_imp, inter_image_comm)
+        CALL mp_sum(epsilon2_abs_lorenz_imp, inter_image_comm)
         CALL mp_barrier(inter_pool_comm)
+        CALL mp_barrier(inter_image_comm)
       ENDIF
       !
 #endif
@@ -474,7 +474,7 @@
       !
       ! Output to file
       DO itemp = 1,nstemp
-        IF (mpime == ionode_id) THEN
+        IF (my_pool_id == ionode_id) THEN
           WRITE(c,"(i0)") neta + 1
           WRITE(tp,"(f8.1)") gtemp(itemp) * ryd2ev / kelvin2eV
           format_string = "("//TRIM(c) // "E22.14)"
@@ -537,18 +537,13 @@
     USE kinds,         ONLY : DP
     USE io_global,     ONLY : stdout, ionode_id
     USE io_var,        ONLY : iudirabs
-    USE modes,         ONLY : nmodes
-    USE epwcom,        ONLY : nbndsub, nstemp, fsthick, degaussw, &
-                              eps_acustic, efermi_read, fermi_energy,&
-                              vme, omegamin, omegamax, omegastep, carrier, &
-                              nomega, neta, lindabs
-    USE elph2,         ONLY : etf, ibndmin, nkf, epf17, wkf, nqtotf, wf, wqf, &
-                              sigmar_all, efnew, gtemp, &
-                              dmef, omegap, epsilon2_abs_dir, epsilon2_abs_lorenz_dir, vmef, &
-                              nbndfst, nktotf, ef0_fca
-    USE constants_epw, ONLY : kelvin2eV, ryd2mev, one, ryd2ev, two, zero, pi, ci, eps6, czero
+    USE input,         ONLY : nbndsub, nstemp, fsthick, degaussw, efermi_read, &
+                              fermi_energy, omegamin, omegamax, carrier, nomega
+    USE global_var,    ONLY : etf, nkf, wkf, efnew, gtemp, omegap, ef0_fca, &
+                              epsilon2_abs_dir, epsilon2_abs_lorenz_dir, vmef
+    USE ep_constants,  ONLY : kelvin2eV, ryd2mev, one, ryd2ev, two, zero, pi, ci, eps6, czero
     USE mp,            ONLY : mp_barrier, mp_sum
-    USE mp_global,     ONLY : inter_pool_comm
+    USE mp_global,     ONLY : inter_pool_comm, my_pool_id
     USE cell_base,     ONLY : omega
     USE mp_world,      ONLY : mpime
     !
@@ -557,10 +552,6 @@
     ! Local variables
     CHARACTER(LEN = 256) :: nameF
     !! Name of the file
-    CHARACTER(LEN = 10) :: c
-    !! Number of eta values, in string format
-    CHARACTER(LEN = 256) :: format_string
-    !! Format string
     CHARACTER(LEN = 20) :: tp
     !! Temperature, in string format
     INTEGER :: ik
@@ -622,16 +613,12 @@
     WRITE(stdout, '(5x,a/)') REPEAT('=',67)
     !
     IF (fsthick < 1.d3) WRITE(stdout, '(/5x,a,f10.6,a)' ) 'Fermi Surface thickness = ', fsthick * ryd2ev, ' eV'
+    WRITE(stdout, '(/5x,a)') 'Please make sure the Fermi surface thickness is sufficient for direct absorption.'
     WRITE(stdout, '(/5x,a)') 'The following temperatures are calculated:'
     DO itemp = 1, nstemp
       WRITE(stdout, '(/5x,a,f10.6,a)' ) 'Temperature T = ', gtemp(itemp) * ryd2ev, ' eV'
     ENDDO
-!    IF (.NOT. lindabs) THEN
-!      ALLOCATE(omegap(nomega), STAT = ierr)
-!      IF (ierr /= 0) CALL errore('dirabs', 'Error allocating omegap', 1)
-!      DO iw = 1, nomega
-!        omegap(iw) = omegamin + (iw - 1) * omegastep
-!      ENDDO
+    !
     ALLOCATE(epsilon2_abs_dir(3, nomega, nstemp), STAT = ierr)
     IF (ierr /= 0) CALL errore('dirabs', 'Error allocating epsilon2_abs_dir', 1)
     ALLOCATE(epsilon2_abs_lorenz_dir(3, nomega, nstemp), STAT = ierr)
@@ -655,25 +642,16 @@
       !
       DO ik = 1, nkf
         ikk = 2 * ik - 1
-        IF (vme == 'wannier') THEN
-          DO ibnd = 1, nbndsub
-            DO jbnd = 1, nbndsub
-              ! vmef is in units of Ryd * bohr
-              vkk(:, ibnd, jbnd) = vmef(:, ibnd, jbnd, ikk)
-            ENDDO
+        DO ibnd = 1, nbndsub
+          DO jbnd = 1, nbndsub
+            ! vmef is in units of Ryd * bohr
+            vkk(:, ibnd, jbnd) = vmef(:, ibnd, jbnd, ikk)
           ENDDO
-         ELSE
-          DO ibnd = 1, nbndsub
-            DO jbnd = 1, nbndsub
-              ! Dme's already corrected for GW corrections in wan2bloch.f90
-              vkk(:, ibnd, jbnd) = dmef(:, ibnd, jbnd, ikk)
-            ENDDO
-          ENDDO
-        ENDIF
+        ENDDO
         DO ibnd = 1, nbndsub
           !  the energy of the electron at k (relative to Ef)
           ekki = etf(ibnd, ikk) - ef0
-          IF (ABS(ekki) < fsthick * 4.0) THEN
+          IF (ABS(ekki) < fsthick) THEN
             !
             ! Occupation factor
             wgki = wgauss(-ekki * inv_temp, -99)
@@ -682,7 +660,7 @@
               !
               ekkj = etf(jbnd, ikk) - ef0
               !
-              IF (ABS(ekkj) < fsthick * 4.0 .AND. ekkj < ekki + omegamax + 6.0 * degaussw) THEN
+              IF (ABS(ekkj) < fsthick .AND. ekkj < ekki + omegamax + 6.0 * degaussw) THEN
                 !
                 wgkj = wgauss(-ekkj * inv_temp, -99)
                 !
@@ -738,7 +716,7 @@
     !Output to file
     !
     DO itemp = 1, nstemp
-      IF (mpime == ionode_id) THEN
+      IF (my_pool_id == ionode_id) THEN
         WRITE(tp,"(f8.1)") gtemp(itemp) * ryd2ev / kelvin2eV
         nameF = 'epsilon2_dirabs_' // trim(adjustl(tp)) // 'K.dat'
         OPEN(UNIT = iudirabs, FILE = nameF)
@@ -772,7 +750,7 @@
     !-----------------------------------------------------------------------
     !
     !--------------------------------------------------------------------------
-    SUBROUTINE renorm_eig(ikk, ikq, nrr_k, dims, ndegen_k, irvec_k, irvec_r, cufkk, cufkq, cfac, cfacq)
+    SUBROUTINE renorm_eig(ikk, ikq, nrr_k, irvec_k, irvec_r, cufkk, cufkq, cfac, cfacq)
     !--------------------------------------------------------------------------
     !!
     !! This routine computes the renormalization of the eigenenergies to be applied
@@ -781,10 +759,10 @@
     !! Samuel Ponce, Kyle and Emmanouil Kioupakis
     !!
     USE kinds,         ONLY : DP
-    USE elph2,         ONLY : xkfd, chw, chw_ks, etf_ks, etf, vmef, nkqf
-    USE epwcom,        ONLY : use_ws, nbndsub
-    USE constants_epw, ONLY : eps40, ryd2mev, twopi, zero, eps6, ci, czero
-    USE wan2bloch,     ONLY : hamwan2bloch, vmewan2bloch
+    USE global_var,    ONLY : xkfd, chw, chw_ks, etf_ks, etf, vmef, nkqf
+    USE input,         ONLY : nbndsub
+    USE ep_constants,  ONLY : eps40, ryd2mev, twopi, zero, eps6, ci, czero
+    USE wannier2bloch, ONLY : hamwan2bloch, vmewan2bloch
     !
     IMPLICIT NONE
     !
@@ -794,10 +772,6 @@
     !! k+q point on that core
     INTEGER, INTENT(in) :: nrr_k
     !! Number of WS points for electrons
-    INTEGER, INTENT(in) :: dims
-    !! Dims is either nbndsub if use_ws or 1 if not
-    INTEGER, INTENT(in) :: ndegen_k(nrr_k, dims, dims)
-    !! Wigner-Seitz number of degenerescence (weights) for the electrons grid
     INTEGER, INTENT(in) :: irvec_k(3, nrr_k)
     !! Integer components of the ir-th Wigner-Seitz grid point in the basis of the lattice vectors for electrons
     REAL(KIND = DP), INTENT(in) :: irvec_r(3, nrr_k)
@@ -810,9 +784,9 @@
     !! Rotation matrix, shifted mesh, points k
     COMPLEX(KIND = DP)  :: cufkqd(nbndsub,nbndsub)
     !! Rotation matrix, shifted mesh, k+q
-    COMPLEX(KIND = DP), INTENT(in) :: cfac(nrr_k, dims, dims)
+    COMPLEX(KIND = DP), INTENT(in) :: cfac(nrr_k)
     !! Exponential factor
-    COMPLEX(KIND = DP), INTENT(in) :: cfacq(nrr_k, dims, dims)
+    COMPLEX(KIND = DP), INTENT(in) :: cfacq(nrr_k)
     !! Exponential factor
     !
     ! Local variables
@@ -822,12 +796,6 @@
     !! Band index
     INTEGER :: jbnd
     !! Band index
-    INTEGER :: ir
-    !! Counter for WS loop
-    INTEGER :: iw
-    !! Counter on bands when use_ws == .TRUE.
-    INTEGER :: iw2
-    !! Counter on bands when use_ws == .TRUE.
     REAL(KIND = DP) :: rdotk(nrr_k)
     !! $r\cdot k$
     REAL(KIND = DP) :: rdotk2(nrr_k)
@@ -836,42 +804,29 @@
     !! interpolated eigenvalues (nbnd, nkqf) eigenvalues for shifted grid in the case of eig_read
     REAL(KIND = DP) :: etfd_ks(nbndsub, nkqf, 6)
     !! interpolated eigenvalues (nbnd, nkqf) KS eigenvalues for shifted grid in the case of eig_read
-    COMPLEX(KIND = DP) :: cfacd(nrr_k, dims, dims, 6)
+    COMPLEX(KIND = DP) :: cfacd(nrr_k, 6)
     !! Used to store $e^{2\pi r \cdot k}$ exponential of displaced vector
-    COMPLEX(KIND = DP) :: cfacqd(nrr_k, dims, dims, 6)
+    COMPLEX(KIND = DP) :: cfacqd(nrr_k, 6)
     !! Used to store $e^{2\pi r \cdot k+q}$ exponential of dispaced vector
     !
-    cfacd(:, :, :, :) = czero
-    cfacqd(:, :, :, :)= czero
+    cfacd(:, :) = czero
+    cfacqd(:, :)= czero
     DO icounter = 1, 6
       CALL DGEMV('t', 3, nrr_k, twopi, irvec_r, 3, xkfd(:, ikk, icounter), 1, 0.0_DP, rdotk, 1)
       CALL DGEMV('t', 3, nrr_k, twopi, irvec_r, 3, xkfd(:, ikq, icounter), 1, 0.0_DP, rdotk2, 1)
-      IF (use_ws) THEN
-        DO iw = 1, dims
-          DO iw2 = 1, dims
-            DO ir = 1, nrr_k
-              IF (ndegen_k(ir, iw2, iw) > 0) THEN
-                cfacd(ir, iw2, iw, icounter)  = EXP(ci * rdotk(ir))  / ndegen_k(ir, iw2, iw)
-                cfacqd(ir, iw2, iw, icounter) = EXP(ci * rdotk2(ir)) / ndegen_k(ir, iw2, iw)
-              ENDIF
-            ENDDO
-          ENDDO
-        ENDDO
-      ELSE
-        cfacd(:, 1, 1, icounter)  = EXP(ci * rdotk(:)) / ndegen_k(:, 1, 1)
-        cfacqd(:, 1, 1, icounter) = EXP(ci * rdotk2(:)) / ndegen_k(:, 1, 1)
-      ENDIF
+      cfacd(:, icounter)  = EXP(ci * rdotk(:))
+      cfacqd(:, icounter) = EXP(ci * rdotk2(:))
       !
-      CALL hamwan2bloch(nbndsub, nrr_k, cufkkd, etfd(:, ikk, icounter), chw, cfacd, dims)
-      CALL hamwan2bloch(nbndsub, nrr_k, cufkqd, etfd(:, ikq, icounter), chw, cfacqd, dims)
-      CALL hamwan2bloch(nbndsub, nrr_k, cufkkd, etfd_ks(:, ikk, icounter), chw_ks, cfacd, dims)
-      CALL hamwan2bloch(nbndsub, nrr_k, cufkqd, etfd_ks(:, ikq, icounter), chw_ks, cfacqd, dims)
+      CALL hamwan2bloch(nbndsub, nrr_k, cufkkd, etfd(:, ikk, icounter), chw, cfacd)
+      CALL hamwan2bloch(nbndsub, nrr_k, cufkqd, etfd(:, ikq, icounter), chw, cfacqd)
+      CALL hamwan2bloch(nbndsub, nrr_k, cufkkd, etfd_ks(:, ikk, icounter), chw_ks, cfacd)
+      CALL hamwan2bloch(nbndsub, nrr_k, cufkqd, etfd_ks(:, ikq, icounter), chw_ks, cfacqd)
     ENDDO ! icounter
     ! -----------------------------------------------------------------------------------------
     CALL vmewan2bloch(nbndsub, nrr_k, irvec_k, cufkk, vmef(:, :, :, ikk), &
-                      etf(:, ikk), etf_ks(:, ikk), chw_ks, cfac, dims)
+                      etf(:, ikk), etf_ks(:, ikk), chw_ks, cfac)
     CALL vmewan2bloch(nbndsub, nrr_k, irvec_k, cufkq, vmef(:, :, :, ikq), &
-                      etf(:, ikq), etf_ks(:, ikq), chw_ks, cfacq, dims)
+                      etf(:, ikq), etf_ks(:, ikq), chw_ks, cfacq)
     ! To Satisfy Phys. Rev. B 62, 4927-4944 (2000) , Eq. (30)
     DO ibnd = 1, nbndsub
       DO jbnd = 1, nbndsub
@@ -916,19 +871,19 @@
     !! indirect optical absorption for doped semiconductor
     !!
     !-----------------------------------------------------------------------
-    USE kinds,     ONLY : DP
-    USE cell_base, ONLY : omega, alat, at
-    USE io_global, ONLY : stdout
-    USE elph2,     ONLY : etf, nkf, wkf, efnew, nkqf, evbm, ecbm
-    USE constants_epw, ONLY : ryd2ev, bohr2ang, ang2cm, eps5, kelvin2eV, &
-                              zero, eps80, eps6
+    USE kinds,            ONLY : DP
+    USE cell_base,        ONLY : omega, alat, at
+    USE io_global,        ONLY : stdout
+    USE global_var,       ONLY : etf, nkf, wkf, nkqf, evbm, ecbm
+    USE ep_constants,     ONLY : ryd2ev, bohr2ang, ang2cm, eps5, kelvin2eV, &
+                                 zero, eps80, eps6
     USE noncollin_module, ONLY : noncolin
-    USE pwcom,     ONLY : nelec
-    USE epwcom,    ONLY : int_mob, nbndsub, ncarrier, nstemp, fermi_energy, &
-                          system_2d, carrier, efermi_read, assume_metal, ngaussw
-    USE klist_epw, ONLY : isk_dummy
-    USE mp,        ONLY : mp_barrier, mp_sum, mp_max, mp_min
-    USE mp_global, ONLY : inter_pool_comm
+    USE pwcom,            ONLY : nelec
+    USE input,            ONLY : nbndsub, ncarrier, nstemp, &
+                                 system_2d, assume_metal, ngaussw
+    USE input,            ONLY : isk_dummy
+    USE mp,               ONLY : mp_barrier, mp_sum, mp_max, mp_min
+    USE mp_global,        ONLY : inter_pool_comm
     !
     IMPLICIT NONE
     !
@@ -966,19 +921,11 @@
     !! Fermi level returned for second Fermi level
     REAL(KIND = DP) :: fnk
     !! Fermi-Diract occupation
-    REAL(KIND = DP) :: ks_exp(nbndsub, nkf)
-    !! Exponential of the eigenvalues divided by kBT
-    REAL(KIND = DP) :: ks_expcb(nbndsub, nkf)
-    !! Exponential of the eigenvalues divided by kBT for CB
-    REAL(KIND = DP) :: fermi_exp
-    !! Fermi level in exponential format
     REAL(KIND = DP) :: rel_err
     !! Relative error
     REAL(KIND = DP) :: factor
     !! Factor that goes from number of carrier per unit cell to number of
     !! carrier per cm^-3
-    REAL(KIND = DP) :: arg
-    !! Argument of the exponential
     REAL(KIND = DP) :: inv_cell
     !! Inverse of the volume in [Bohr^{-3}]
     REAL(KIND = DP) :: ef_tmp
@@ -1000,7 +947,6 @@
     !
     IF (assume_metal) THEN
       !! set conduction band chemical potential to 0 since it is irrelevent
- !     efcb(itemp) = zero
       ef0_fca(itemp) = efermig(etf, nbndsub, nkqf, nelec, wkf, etemp_fca, ngaussw, 0, isk_dummy)
       RETURN
     ENDIF
@@ -1017,7 +963,7 @@
     !
     IF (system_2d == 'no') THEN
       inv_cell = 1.0d0 / omega
-    ELSE 
+    ELSE
       ! for 2d system need to divide by area (vacuum in z-direction)
       inv_cell = ( 1.0d0 / omega ) * at(3, 3) * alat
     ENDIF
@@ -1076,7 +1022,6 @@
       !
       DO ik = 1, nkf
         ikk = 2 * ik -1
-!        WRITE(stdout, '(5x, i, i)') icbm, nbndsub
         DO ibnd = icbm, nbndsub
           ekk = etf(ibnd, ikk) - ef_tmp
           fnk = wgauss(-ekk / etemp_fca, -99)
@@ -1231,22 +1176,18 @@
     USE io_global,         ONLY : stdout, ionode_id
     USE cell_base,         ONLY : alat, at, omega, bg
     USE symm_base,         ONLY : s
-    USE epwcom,            ONLY : nbndsub, fsthick, system_2d, nstemp, assume_metal, &
-                                  vme, mp_mesh_k, nkf1, nkf2, nkf3, omegamin, omegamax, &
-                                  omegastep, nomega, sigma_ref
-    USE elph2,             ONLY : ibndmin, etf, nkf, wkf, vmef, dmef, bztoibz,  &
-                                  nkqtotf, gtemp, nbndfst, nktotf, nkqf, s_bztoibz, &
-                                  omegap
-    USE constants_epw,     ONLY : zero, one, bohr2ang, ryd2ev, ang2cm, czero, &
+    USE input,             ONLY : fsthick, system_2d, nstemp, &
+                                  mp_mesh_k, nkf1, nkf2, nkf3, nomega, sigma_ref
+    USE global_var,        ONLY : ibndmin, etf, nkf, wkf, vmef, bztoibz,  &
+                                  gtemp, nbndfst, nktotf, s_bztoibz, omegap
+    USE ep_constants,      ONLY : zero, one, bohr2ang, ryd2ev, ang2cm, czero, &
                                   kelvin2eV, hbar, Ang2m, hbarJ, eps6, eps4, pi, &
                                   ryd2mev, meV2invps
     USE constants,         ONLY : electron_si
     USE mp,                ONLY : mp_sum, mp_bcast
-    USE mp_global,         ONLY : world_comm
+    USE mp_global,         ONLY : inter_pool_comm
     USE mp_world,          ONLY : mpime
-    USE poolgathering,     ONLY : poolgatherc4, poolgather2
-    USE division,          ONLY : fkbounds
-    USE grid,              ONLY : kpoint_grid_epw
+    USE parallelism,       ONLY : poolgatherc4, poolgather2, fkbounds
     USE symm_base,         ONLY : s
     USE noncollin_module,  ONLY : noncolin
     USE pwcom,             ONLY : ef
@@ -1258,8 +1199,6 @@
     !! Fermi level for temperature itemp and the given carrier density.
     !
     ! Local variables
-    CHARACTER(LEN = 256) :: format_string
-    !! Format string
     CHARACTER(LEN = 256) :: nameF
     !! Name of the file
     CHARACTER(LEN = 20) :: tp
@@ -1288,8 +1227,6 @@
     !! Number of points in the BZ corresponding to a point in IBZ
     INTEGER :: iww
     !! Frequency point
-    INTEGER :: ierr
-    !! Error status
     REAL(KIND = DP) :: efcalc
     !! Fermi level
     REAL(KIND = DP) :: ekk
@@ -1303,7 +1240,7 @@
     REAL(KIND = DP) :: conv_factor1
     !! Conversion factor for the conductivity
     REAL(KIND = DP) :: sigma_ref_au
-    !! Reference conductivity from user input, a.u.
+    !! Reference conductivity from user input,     a.u.
     REAL(KIND = DP) :: sigma_calc
     !! Calculated average conductivity
     REAL(KIND = DP) :: inv_cell
@@ -1326,17 +1263,6 @@
     !! The derivative of wgauss:  an approximation to the delta function
     REAL(KIND = DP) :: epsilon2_resistive(nomega)
     !! Resistive spectra
-    REAL(KIND = DP), ALLOCATABLE :: etf_all(:, :)
-    !! Eigen-energies on the fine grid collected from all pools in parallel case
-    COMPLEX(KIND = DP), ALLOCATABLE :: dmef_all(:, :, :, :)
-    !! dipole matrix elements on the fine mesh among all pools
-    COMPLEX(KIND = DP), ALLOCATABLE :: vmef_all(:, :, :, :)
-    !! velocity matrix elements on the fine mesh among all pools
-    REAL(KIND = DP), ALLOCATABLE :: tdf_sigma_m(:, :, :, :)
-    !! transport distribution function
-    REAL(KIND = DP), ALLOCATABLE :: wkf_all(:)
-    !! k-point weight on the full grid across all pools
-    !  SP - Uncomment to use symmetries on velocities
     REAL(KIND = DP) :: v_rot(3)
     !! Rotated velocity by the symmetry operation
     REAL(KIND = DP) :: vk_cart(3)
@@ -1350,7 +1276,7 @@
     !
     IF (system_2d == 'no') THEN
       inv_cell = 1.0d0 / omega
-    ELSE 
+    ELSE
       ! for 2d system need to divide by area (vacuum in z-direction)
       inv_cell = ( 1.0d0 / omega ) * at(3, 3) * alat
     ENDIF
@@ -1380,11 +1306,7 @@
             !
             tdf_sigma(:) = zero
             !
-            IF (vme == 'wannier') THEN
-              vkk(:, ibnd) = REAL(vmef(:, ibndmin - 1 + ibnd, ibndmin - 1 + ibnd, ikk))
-            ELSE
-              vkk(:, ibnd) = 2.0 * REAL(dmef(:, ibndmin - 1 + ibnd, ibndmin - 1 + ibnd, ikk))
-            ENDIF
+            vkk(:, ibnd) = REAL(vmef(:, ibndmin - 1 + ibnd, ibndmin - 1 + ibnd, ikk))
             !
             IF (mp_mesh_k) THEN
               !
@@ -1451,7 +1373,7 @@
       !
       !Sum over all pool to gather results
       !
-      CALL mp_sum(sigma(:, itemp), world_comm)
+      CALL mp_sum(sigma(:, itemp), inter_pool_comm)
       !
       sigma_m(:, :) = zero
       sigma_m(1, 1) = sigma(1, itemp)
@@ -1501,19 +1423,17 @@
     SUBROUTINE prepare_indabs()
     !-----------------------------------------------------------------------
     USE kinds,         ONLY : DP
-    USE io_var,        ONLY : iuindabs
-    USE modes,         ONLY : nmodes
-    USE epwcom,        ONLY : nstemp, omegamin, omegamax, omegastep,     &
-                              nomega, neta, restart
+    USE input,         ONLY : nstemp, omegamin, omegamax, omegastep,     &
+                              nomega, neta
 
-    USE elph2,         ONLY : epsilon2_abs, epsilon2_abs_lorenz,         &
+    USE global_var,    ONLY : epsilon2_abs, epsilon2_abs_lorenz,         &
                               epsilon2_abs_all, epsilon2_abs_lorenz_all
     !
     IMPLICIT NONE
     !
     INTEGER  :: ierr
     !! error in allocation
-    !                    
+    !
     ! Calculate the number of frequency points
     nomega = INT((omegamax - omegamin) / omegastep) + 1
     ALLOCATE(epsilon2_abs(3, nomega, neta, nstemp), STAT = ierr)
@@ -1523,14 +1443,12 @@
     ALLOCATE(epsilon2_abs_all(3, nomega, neta, nstemp), STAT = ierr)
     IF (ierr /= 0) CALL errore('prepare_indabs', 'Error allocating epsilon2_abs_all', 1)
     ALLOCATE(epsilon2_abs_lorenz_all(3, nomega, neta, nstemp), STAT = ierr)
-    IF (ierr /= 0) CALL errore('prepare_indabs', 'Error allocating & 
+    IF (ierr /= 0) CALL errore('prepare_indabs', 'Error allocating &
                               &epsilon2_abs_lorenz_all', 1)
     !-------------------------------------------------------------------------
-    END SUBROUTINE prepare_indabs 
+    END SUBROUTINE prepare_indabs
     !-------------------------------------------------------------------------
   !
   !-----------------------------------------------------------------------
   END MODULE indabs
   !-----------------------------------------------------------------------
-
-

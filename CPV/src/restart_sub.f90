@@ -14,7 +14,7 @@ SUBROUTINE from_restart( )
                                      thdyn, tzeroc, force_pairing, trhor, &
                                      ampre, trane, tpre, dt_old, tv0rd, &
                                      trescalee, tcap, dt_xml_old
-   USE wavefunctions,  ONLY : c0_bgrp, cm_bgrp
+   USE cp_wavefunctions,      ONLY : c0_bgrp, cm_bgrp
    USE electrons_module,      ONLY : occn_info
    USE electrons_base,        ONLY : nspin, iupdwn, nupdwn, f, nbsp, nbsp_bgrp
    USE io_global,             ONLY : ionode, ionode_id, stdout
@@ -82,10 +82,10 @@ SUBROUTINE from_restart( )
        WRITE (stdout,*) '      the changing of timestep is performed automatically when the input timestep is'
        WRITE (stdout,*) '      different from the one read from the xml file and no changing timestep input variable'
        WRITE (stdout,*) '      is specified (tolp, ion_velocities and electron_velocities = change_step )'
-       IF (abs(dt_old - dt_xml_old) > 1.0d-6) THEN
+       IF (dt_xml_old > 0.0_dp .AND. abs(dt_old - dt_xml_old) > 1.0d-6) THEN
            CALL errore (' from_restart ', ' input tolp and old dt written in the xml file are different ', 1)
        ENDIF
-   ELSE IF ( abs(dt_xml_old - delt) > 1.0d-6 ) THEN
+   ELSE IF (dt_xml_old > 0.0_dp .AND. abs(dt_xml_old - delt) > 1.0d-6 ) THEN
        dt_old = dt_xml_old
        trescalee = .true.
        WRITE (stdout,*) 'NOTE: the new behavior is to automatically perform a change of timestep when the old'
@@ -199,6 +199,7 @@ SUBROUTINE from_restart( )
    END IF
    !
    CALL phfacs( eigts1, eigts2, eigts3, eigr, mill, taus, dfftp%nr1, dfftp%nr2, dfftp%nr3, nat )
+   !$acc update device(eigts1,eigts2,eigts3)
    !
    CALL strucf( sfac, eigts1, eigts2, eigts3, mill, dffts%ngm )
    !
