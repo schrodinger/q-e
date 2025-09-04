@@ -556,8 +556,8 @@ SUBROUTINE remove_dyn_interaction (d,na_)
       END DO
     END DO
     IF (norm .lt. 1.e-8_DP ) THEN
-      d(:,:,ia,:) = 0._DP
-      d(:,:,:,ia)  =  0._DP
+      d(:,:,ia,:) = CMPLX(0., 0., kind=DP)
+      d(:,:,:,ia) = CMPLX(0., 0., kind=DP)
     END IF
   END DO
   !
