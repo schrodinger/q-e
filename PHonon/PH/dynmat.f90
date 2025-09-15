@@ -142,7 +142,6 @@ program dynmat
   CALL mp_bcast(prefix,ionode_id, world_comm)
   CALL mp_bcast(filspm,ionode_id, world_comm)
   CALL mp_bcast(filvib,ionode_id, world_comm)
-  CALL mp_bcast(remove_interaction_blocks, ionode_id, world_comm)
   !
   IF ( trim( prefix ) /= ' ' ) THEN
      fildyn = trim(prefix) // '.save/' // trim(fildyn)
@@ -191,11 +190,12 @@ program dynmat
         END DO
      END IF
   ENDIF
-  IF (remove_interaction_blocks)  CALL remove_dyn_interaction(dyn, nat) 
   !
   IF (ionode) THEN
      !
      ! from now on, execute on a single processor
+     !
+     IF (remove_interaction_blocks)  CALL remove_dyn_interaction(dyn, nat)
      !
      gamma = ( abs( q_(1)**2+q_(2)**2+q_(3)**2 ) < 1.0d-8 )
      !
