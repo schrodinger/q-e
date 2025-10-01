@@ -350,7 +350,7 @@ subroutine writespm (nat, freq, intens, is_raman, iout)
 end subroutine writespm
 !
 !-----------------------------------------------------------------------
-subroutine writevib (nat, freq, ir_intens, raman_act, ntyp, amass, ityp, z, iout)
+subroutine writevib (nat, freq, ir_intens, raman_act, ntyp, amass, ityp, z, asr, iout)
   !-----------------------------------------------------------------------
   !
   !   write frequencies and vibrations on output file in a vib-friendly way
@@ -363,6 +363,7 @@ subroutine writevib (nat, freq, ir_intens, raman_act, ntyp, amass, ityp, z, iout
   real(DP), intent(in) :: freq(3*nat), ir_intens(3*nat), raman_act(3*nat), &
      amass(ntyp)
   complex(DP), intent(in) :: z(3*nat,3*nat)
+  character(len=*), intent(in) :: asr
   ! local
   integer :: nat3, na, nta, ipol, i, j, nu, exists(3*nat)
   real(DP) :: znorm
@@ -389,8 +390,10 @@ subroutine writevib (nat, freq, ir_intens, raman_act, ntyp, amass, ityp, z, iout
   write(iout, '("")')
   write(iout, '("f_m_table { ")')
   write(iout, '(" i_j_atom_total")')
+  write(iout, '(" s_matsci_QE_dynmat_asr")')
   write(iout, '(" :::")')
   write(iout, '(" ", i0)') nat
+  write(iout, '(" ", a)') TRIM(asr)
   write(iout, '(" m_column[", i0, "] { ")') nat3 + 5
   write(iout, '("  s_m_data_name")')
   write(iout, '("  s_m_column_name")')

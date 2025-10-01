@@ -21,7 +21,7 @@ YAMBO_URL=https://github.com/yambo-code/yambo/archive/4.5.2.tar.gz
 #
 # Package maintainer: Davide Ceresoli
 GIPAW=qe-gipaw-$(RELEASE_VERSION)
-GIPAW_URL=https://github.com/dceresoli/qe-gipaw/archive/$(RELEASE_VERSION).tar.gz
+GIPAW_URL=https://github.com/dceresoli/qe-gipaw/archive/7.5.tar.gz
 #
 # Package maintainer: Lorenzo Paulatto
 D3Q=d3q-latest

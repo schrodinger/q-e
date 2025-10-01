@@ -237,7 +237,7 @@ program dynmat
         ENDIF
      ENDIF
      !
-     CALL dump_ir_raman(prefix, nat, omega, w2, z, zstar, eps0, dchi_dtau)
+     CALL dump_ir_raman(prefix, nat, omega, w2, z, zstar, eps0, dchi_dtau, asr)
      !
   ENDIF
   !
@@ -256,13 +256,13 @@ program dynmat
   !
   CONTAINS
   !
-   SUBROUTINE dump_ir_raman(prefix, nat, omega, w2, z, zstar, eps0, dchi_dtau)
+   SUBROUTINE dump_ir_raman(prefix, nat, omega, w2, z, zstar, eps0, dchi_dtau, asr)
       !
       USE kinds, ONLY: DP
       USE constants, ONLY : RY_TO_CMM1, amu_ry, eps8
       implicit none
       ! input
-      CHARACTER(len=*), INTENT(in) :: prefix
+      CHARACTER(len=*), INTENT(in) :: prefix, asr
       integer, intent(in) :: nat
       real(DP), intent(in) :: omega, w2(3*nat), zstar(3,3,nat), eps0(3,3), &
            dchi_dtau(3,3,3,nat)
@@ -353,7 +353,7 @@ program dynmat
       filename = TRIM(prefix) // ".vib"
       iunit = find_free_unit()
       OPEN(unit=iunit, file=TRIM(filename), status='unknown', form='formatted')
-      CALL writevib(nat, freq, infrared, raman_act, ntyp, amass, ityp, z, iunit)
+      CALL writevib(nat, freq, infrared, raman_act, ntyp, amass, ityp, z, asr, iunit)
       CLOSE(unit=iunit)
       !
       IF ( ANY(zstar .GT. eps8) ) THEN
