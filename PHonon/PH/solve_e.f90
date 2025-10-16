@@ -160,7 +160,7 @@ subroutine solve_e
         CALL diropn (iudrho, TRIM(fildrho)//'.E', lrdrho, exst)
      END IF
      DO ipol=1,3
-        CALL davcio_drho(dvscfin(1,1,ipol),lrdrho, iudrho,ipol,+1)
+        CALL davcio_drho(drhop(1,1,ipol),lrdrho, iudrho,ipol,+1)
      END DO
   END IF
   !
