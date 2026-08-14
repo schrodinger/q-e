@@ -12,6 +12,7 @@ build/
 *.orig
 *.swp
 *.UPF
+*.upf
 *.log
 *.dvi
 *.toc
@@ -19,6 +20,11 @@ build/
 *_tmp.f90
 *.TMP
 *.out
+config.status
+configure.msg
+.gitignore
+.gitlab*
+compile.sh
 
 bin/*
 FoX
@@ -36,6 +42,7 @@ test-suite/*/test.err.*
 test-suite/*/test.out.*
 test-suite/*/pwscf*
 test-suite/userconfig
+test-suite/buildbot
 */results
 S3DE
 D3Q
@@ -49,4 +56,9 @@ EPW/src/tmp
 LAXlib/*.fh
 **/CRASH
 **/pwscf.xml
+
+# Rendered input documentation: generated from INPUT_*.def by dev-tools/helpdoc
+**/Doc/INPUT_*.txt
+**/Doc/INPUT_*.html
+**/Doc/INPUT_*.xml
 logo.jpg

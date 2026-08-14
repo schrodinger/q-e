@@ -6,10 +6,10 @@
 # of the License. See the file `License' in the root directory
 # of the present distribution.
 #
-RELEASE_VERSION := $(shell awk -F\' '/version_number/{print $$2}' ../include/qe_version.h )
+RELEASE_VERSION := $(shell awk -F\' '/version_number/{print $$2}' ${TOPDIR}/include/qe_version.h )
 #
 #
-# Package maintainer: Andrea Ferretti
+# Package maintainer: Andrea Ferretti - OBSOLETE?
 WANT=want-want-2.6.1
 WANT_URL=https://github.com/QEF/want/archive/want-2.6.1.tar.gz
 
@@ -21,7 +21,7 @@ YAMBO_URL=https://github.com/yambo-code/yambo/archive/4.5.2.tar.gz
 #
 # Package maintainer: Davide Ceresoli
 GIPAW=qe-gipaw-$(RELEASE_VERSION)
-GIPAW_URL=https://github.com/dceresoli/qe-gipaw/archive/7.5.tar.gz
+GIPAW_URL=https://github.com/dceresoli/qe-gipaw/archive/$(RELEASE_VERSION).tar.gz
 #
 # Package maintainer: Lorenzo Paulatto
 D3Q=d3q-latest

@@ -24,7 +24,7 @@ Module ifconstants
   INTEGER, ALLOCATABLE  :: ityp_blk(:)
   !! atomic types for each atom of the original cell
   !
-  CHARACTER(LEN=3), ALLOCATABLE :: atm(:)
+  CHARACTER(LEN=6), ALLOCATABLE :: atm(:)
   !
 end Module ifconstants
 !
@@ -229,7 +229,7 @@ PROGRAM matdyn
   CHARACTER(LEN=6) :: int_to_char
   LOGICAL, ALLOCATABLE :: mask(:)
   INTEGER            :: npk_label, nch
-  CHARACTER(LEN=100), ALLOCATABLE :: letter(:)
+  CHARACTER(LEN=3), ALLOCATABLE :: letter(:)
   INTEGER, ALLOCATABLE :: label_list(:)
   LOGICAL :: tend, terr
   CHARACTER(LEN=256) :: input_line, buffer
@@ -475,10 +475,9 @@ PROGRAM matdyn
         ALLOCATE ( q(3,nq) )
         IF (.NOT.q_in_band_form) THEN
            ALLOCATE(wq(nq))
-           ALLOCATE(letter(nq))
            wq(:) = 0.0_dp
            DO n = 1,nq
-              IF (ionode) READ (5,*) (q(i,n),i=1,3), letter(n)
+              IF (ionode) READ (5,*) (q(i,n),i=1,3)
            END DO
            CALL mp_bcast(q, ionode_id, world_comm)
            !
@@ -780,19 +779,16 @@ PROGRAM matdyn
            WRITE(2,'(6f10.4)') (freq(i,n), i=1,3*nat)
         END DO
         CLOSE(unit=2)
-        !
-        IF(.NOT.dos) THEN
-           OPEN (unit=2,file=trim(flfrq)//'.gp' ,status='unknown',form='formatted')
-           pathL = 0._dp
-           WRITE(2, '(f10.6,3x,a,3x,999f10.4)')  pathL, letter(1), (freq(i,1), i=1,3*nat)
-           DO n=2, nq
-               pathL=pathL+(SQRT(SUM(  (q(:,n)-q(:,n-1))**2 )))
-               WRITE(2, '(f10.6,3x,a,3x,999f10.4)')  pathL, letter(n), (freq(i,n), i=1,3*nat)
-           END DO
-           CLOSE(unit=2)
-           DEALLOCATE(letter)
-        END IF
-        !
+
+        OPEN (unit=2,file=trim(flfrq)//'.gp' ,status='unknown',form='formatted')
+        pathL = 0._dp
+        WRITE(2, '(f10.6,3x,999f10.4)')  pathL,  (freq(i,1), i=1,3*nat)
+        DO n=2, nq
+           pathL=pathL+(SQRT(SUM(  (q(:,n)-q(:,n-1))**2 )))
+           WRITE(2, '(f10.6,3x,999f10.4)')  pathL,  (freq(i,n), i=1,3*nat)
+        END DO
+        CLOSE(unit=2)
+
      END IF
      !
      !  If the force constants are in the xml format we write also
@@ -893,7 +889,7 @@ PROGRAM matdyn
      DEALLOCATE(high_sym)
      DEALLOCATE(frc_lr)
   !
-  CALL environment_end('MATDYN')
+  CALL environment_end( )
   !
   CALL mp_global_end()
   !
@@ -1906,7 +1902,7 @@ SUBROUTINE set_asr (asr, nr1, nr2, nr3, frc, frc_lr, zeu, nat, ibrav, tau_blk, a
   enddo
   !
   ! Projection of the force-constants "vector" on the orthogonal of the
-  ! subspace of the vectors verifying the sum rules and symmetry contraints
+  ! subspace of the vectors verifying the sum rules and symmetry constraints
   !
   w(:,:,:,:,:,:,:)=0.0d0
   do l=1,m
