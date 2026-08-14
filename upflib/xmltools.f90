@@ -115,7 +115,8 @@ MODULE xmltools
   END INTERFACE get_attr
 
   INTERFACE add_attr
-     MODULE PROCEDURE add_i_attr, add_iv_attr, add_l_attr, add_r_attr, add_c_attr
+     MODULE PROCEDURE add_i_attr, add_iv_attr, add_l_attr, add_r_attr, &
+                      add_rv_attr, add_c_attr
   END INTERFACE add_attr
   
 CONTAINS
@@ -257,6 +258,26 @@ CONTAINS
     DEALLOCATE (attr_iv)
     !
   END SUBROUTINE add_iv_attr
+  !
+  SUBROUTINE add_rv_attr ( attrname, attrval_rv )
+    !
+    IMPLICIT NONE
+    CHARACTER(LEN=*), INTENT(IN) :: attrname
+    REAL(DP_XML), INTENT(IN) :: attrval_rv(:)
+    !
+    INTEGER :: n_el, n
+    CHARACTER(LEN=:), ALLOCATABLE :: attr_rv
+    !
+    n_el = SIZE(attrval_rv)
+    IF ( n_el <= 0 ) RETURN
+    attr_rv = r2c(attrval_rv(1))
+    DO n = 2, n_el
+       attr_rv = attr_rv // ' '  // r2c(attrval_rv(n))
+    END DO
+    CALL add_c_attr ( attrname, attr_rv )
+    DEALLOCATE (attr_rv)
+    !
+  END SUBROUTINE add_rv_attr
     !
   SUBROUTINE add_l_attr ( attrname, attrval_l )
     !

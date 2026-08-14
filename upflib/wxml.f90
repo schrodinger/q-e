@@ -43,7 +43,7 @@ MODULE wxml
   INTERFACE xml_addattribute
      MODULE PROCEDURE xml_addattribute_c,  xml_addattribute_r, &
                       xml_addattribute_i,  xml_addattribute_l, &
-                      xml_addattribute_iv
+                      xml_addattribute_iv, xml_addattribute_rv
   END INTERFACE xml_addattribute
   !
 CONTAINS
@@ -137,6 +137,20 @@ CONTAINS
     end if
     !
   end subroutine xml_addattribute_r
+  !
+  subroutine xml_addattribute_rv ( xf, name, value )
+    !
+    type(xmlf_t), intent(in) :: xf
+    character(len=*), intent(in) :: name
+    real(DP_XML), intent(in) :: value(:)
+    !
+    if ( xf%unit == -1 ) then
+       print *, 'xml file not opened'
+    else
+       call add_attr(name, value)
+    end if
+    !
+  end subroutine xml_addattribute_rv
   !
   subroutine xml_addattribute_iv ( xf, name, value )
     !
