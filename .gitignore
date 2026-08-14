@@ -38,6 +38,8 @@ install/make-*
 install/configure-*
 install/uncompress-*
 make.depend
+# ...except this one: it is a configure input (AC_CONFIG_FILES), not generated
+!PIOUD/src/make.depend
 test-suite/*/test.err.*
 test-suite/*/test.out.*
 test-suite/*/pwscf*
