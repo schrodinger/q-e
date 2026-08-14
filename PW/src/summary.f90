@@ -274,7 +274,7 @@ CALL cell_nose_info(dt)
              (na, atm(ityp(na)), na, (tau(ipol,na), ipol=1,3), na=1,nat)
   !
   IF ( ALLOCATED( if_pos ) ) THEN
-     IF ( ANY( if_pos(:,:) == 0 ) .AND. iverbosity > 0 ) THEN
+     IF ( ANY( if_pos(:,:) == 0 ) ) THEN
         WRITE( stdout, '(/5x,"Fixed atoms",/5x,"site n.  direction")')
         WRITE( stdout,'(6x,i4,1x,3i4)') (na, if_pos(:,na), na=1,nat)
      ENDIF
