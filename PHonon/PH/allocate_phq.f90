@@ -41,6 +41,7 @@ subroutine allocate_phq
   USE eqv,           ONLY : dpsi, evq, vlocq, dmuxc, dvpsi
   USE lr_symm_base,  ONLY : rtau
   USE control_lr,    ONLY : lgamma
+  USE control_ph,    ONLY : trans
   USE ldaU,          ONLY : lda_plus_u, Hubbard_lmax, nwfcU
   USE ldaU_ph,       ONLY : dnsbare, dnsorth, dnsbare_all_modes, wfcatomk, &
                             dwfcatomk, sdwfcatomk, wfcatomkpq, dwfcatomkpq,  &
@@ -114,21 +115,23 @@ subroutine allocate_phq
 
   if (okvan) then
      allocate (int1 ( nhm, nhm, 3, nat, nspin_mag))
-     allocate (int2 ( nhm , nhm , 3 , nat , nat))
+     ! int2 and int2_so are allocated in phq_init, after phq_setup
      if (okpaw) then
         allocate (becsumort ( nhm*(nhm+1)/2 , nat , nspin, 3*nat))
     endif
-     allocate (int4 ( nhm * (nhm + 1)/2,  3 , 3 , nat, nspin_mag))
-     allocate (int5 ( nhm * (nhm + 1)/2 , 3 , 3 , nat , nat))
+     ! int4 and int5 are used only for the dynamical matrix
+     IF (trans) THEN
+        allocate (int4 ( nhm * (nhm + 1)/2,  3 , 3 , nat, nspin_mag))
+        allocate (int5 ( nhm * (nhm + 1)/2 , 3 , 3 , nat , nat))
+     ENDIF
      allocate (dpqq( nhm, nhm, 3, ntyp))
      IF (noncolin) THEN
         ALLOCATE(int1_nc( nhm, nhm, 3, nat, nspin))
-        ALLOCATE(int4_nc( nhm, nhm, 3, 3, nat, nspin))
+        IF (trans) ALLOCATE(int4_nc( nhm, nhm, 3, 3, nat, nspin))
         ALLOCATE(becsum_nc( nhm*(nhm+1)/2, nat, npol, npol))
         ALLOCATE(alphasum_nc( nhm*(nhm+1)/2, 3, nat, npol, npol))
         IF (lspinorb) THEN
-           ALLOCATE(int2_so( nhm, nhm, 3, nat , nat, nspin))
-           ALLOCATE(int5_so( nhm, nhm, 3, 3, nat , nat, nspin))
+           IF (trans) ALLOCATE(int5_so( nhm, nhm, 3, 3, nat , nat, nspin))
            allocate(dpqq_so( nhm, nhm, nspin, 3, ntyp))
         END IF
      END IF

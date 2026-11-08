@@ -7,10 +7,11 @@
 !
 !
 !-----------------------------------------------------------------------
-subroutine compute_drhous_nc (drhous, dbecsum, wgg, becq, alpq)
+subroutine compute_drhous_nc (drhous, dbecsum, wgg, becq, alpq, nmodes, modes)
   !-----------------------------------------------------------------------
   !! This routine computes the part of the change of the charge density
   !! which is due to the orthogonalization constraint on wavefunctions.
+  !! Only the listed modes are computed, arrays are indexed by the list.
   !
   !
   USE kinds,            ONLY : DP
@@ -35,9 +36,13 @@ subroutine compute_drhous_nc (drhous, dbecsum, wgg, becq, alpq)
   !
   implicit none
   !
-  complex(DP) :: dbecsum(nhm,nhm,nat,nspin,3*nat)
+  integer, intent(in) :: nmodes
+  !! input: the number of modes to compute
+  integer, intent(in) :: modes(nmodes)
+  !! input: the modes to compute
+  complex(DP) :: dbecsum(nhm,nhm,nat,nspin,nmodes)
   !! output: the derivative of becsum
-  complex(DP) :: drhous(dffts%nnr,nspin_mag,3*nat)
+  complex(DP) :: drhous(dffts%nnr,nspin_mag,nmodes)
   !! output: add the orthogonality term
   type(bec_type) :: becq(nksq) ! (nkb, nbnd)
   !! input: the becp with \(\text{psi}_{k+q}\)
@@ -48,7 +53,7 @@ subroutine compute_drhous_nc (drhous, dbecsum, wgg, becq, alpq)
   !
   ! ... local variables
   !
-  integer :: npw, npwq, ik, ikq, ikk, ig, nu_i, ibnd, ios
+  integer :: npw, npwq, ik, ikq, ikk, ig, im, ibnd, ios
   ! counter on k points
   ! the point k+q
   ! record for wfcs at k point
@@ -106,9 +111,9 @@ subroutine compute_drhous_nc (drhous, dbecsum, wgg, becq, alpq)
      !   And compute the contribution of this k point to the change of
      !   the charge density
      !
-     do nu_i = 1, 3 * nat
-        call incdrhous_nc (drhous (1, 1, nu_i), weight, ik, &
-                 dbecsum (1, 1, 1, 1, nu_i), evcr, wgg, becq, alpq, nu_i)
+     do im = 1, nmodes
+        call incdrhous_nc (drhous (1, 1, im), weight, ik, &
+                 dbecsum (1, 1, 1, 1, im), evcr, wgg, becq, alpq, modes(im))
      enddo
 
   enddo

@@ -34,7 +34,10 @@ subroutine drho
   USE uspp,       ONLY : okvan, nkb
   USE wvfct,      ONLY : nbnd
   USE paw_variables,    ONLY : okpaw
-  USE control_ph, ONLY : all_done
+  USE control_ph, ONLY : all_done, trans
+  USE partial,    ONLY : nat_todo, nat_todo_input, atomo, set_local_atomo
+  USE symm_base,  ONLY : irt
+  USE lr_symm_base, ONLY : nsymq
   USE lrus,       ONLY : becp1
   USE qpoint,     ONLY : nksq
   USE control_lr, ONLY : lgamma, rec_code_read
@@ -71,7 +74,15 @@ subroutine drho
   complex(DP) :: wdyn (3 * nat, 3 * nat)
   type (bec_type), pointer :: becq(:), alpq(:,:)
   complex(DP), allocatable :: dvlocin (:), drhous (:,:,:),&
-       drhoust (:,:,:), dbecsum(:,:,:,:), dbecsum_nc(:,:,:,:,:)
+       drhoust (:,:,:), dbecsum(:,:,:,:), dbecsum_nc(:,:,:,:,:), &
+       dbecsumt (:,:,:,:)
+  ! dbecsum of the modes in the current batch
+
+  integer :: nmodes_l, im, na_l, nat_l
+  integer, allocatable :: modes_l (:), imode_l (:), atomo_l (:)
+  ! number of modes computed, their list, compact index of each mode (0
+  ! if not computed), atoms to do and their symmetry images
+  real(DP) :: ss
   ! auxiliary to store bec at k+q
   ! auxiliary to store alphap at
   ! the change of the local potential
@@ -121,23 +132,51 @@ subroutine drho
   !    which does not contain the local potential
   !
   IF (.not.lgamma) call compute_becalp (becq, alpq)
-  call start_clock('nldyntot')
-  call compute_nldyn (dyn00, wgg, becq, alpq)
-  call stop_clock('nldyntot')
+  ! dyn00 is used only for the dynamical matrix
+  IF (trans) THEN
+     call start_clock('nldyntot')
+     call compute_nldyn (dyn00, wgg, becq, alpq)
+     call stop_clock('nldyntot')
+  ENDIF
+  !
+  !   With nat_todo, only the modes moving the atoms to do (and their
+  !   symmetry images) are computed, the others stay zero
+  !
+  allocate (modes_l (3 * nat))
+  allocate (imode_l (3 * nat))
+  imode_l = 0
+  nmodes_l = 0
+  if (nat_todo_input > 0) call set_local_atomo (nat, nat_todo, atomo, &
+                                                nsymq, irt, nat_l, atomo_l)
+
+  do nu_i = 1, 3 * nat
+     if (nat_todo_input > 0) then
+        ss = 0.d0
+        do na_l = 1, nat_l
+           ss = ss + sum (abs (u (3*atomo_l(na_l)-2:3*atomo_l(na_l), nu_i))**2)
+        enddo
+        if (ss * ss <= 1.d-8) cycle
+     endif
+     nmodes_l = nmodes_l + 1
+     modes_l (nmodes_l) = nu_i
+     imode_l (nu_i) = nmodes_l
+  enddo
+  if (allocated (atomo_l)) deallocate (atomo_l)
   !
   !   now we compute the change of the charge density due to the change of
   !   the orthogonality constraint
   !
-  allocate (drhous ( dffts%nnr, nspin_mag , 3 * nat))
-  allocate (dbecsum( nhm * (nhm + 1) /2, nat, nspin_mag, 3 * nat))
+  allocate (drhous ( dffts%nnr, nspin_mag , nmodes_l))
+  allocate (dbecsum( nhm * (nhm + 1) /2, nat, nspin_mag, nmodes_l))
   dbecsum=(0.d0,0.d0)
   call start_clock('drhous')
   IF (noncolin) THEN
-     allocate (dbecsum_nc( nhm, nhm, nat, nspin, 3 * nat))
+     allocate (dbecsum_nc( nhm, nhm, nat, nspin, nmodes_l))
      dbecsum_nc=(0.d0,0.d0)
-     call compute_drhous_nc (drhous, dbecsum_nc, wgg, becq, alpq)
+     call compute_drhous_nc (drhous, dbecsum_nc, wgg, becq, alpq, &
+                             nmodes_l, modes_l)
   ELSE
-     call compute_drhous (drhous, dbecsum, wgg, becq, alpq)
+     call compute_drhous (drhous, dbecsum, wgg, becq, alpq, nmodes_l, modes_l)
   ENDIF
   call stop_clock('drhous')
 
@@ -156,48 +195,54 @@ subroutine drho
   !  The part of C^3 (Eq. 37) which contain the local potential can be
   !  evaluated with an integral of this change of potential and drhous
   !
-  allocate (dvlocin(dffts%nnr))
+  IF (trans) THEN
+     allocate (dvlocin(dffts%nnr))
 
-  wdyn (:,:) = (0.d0, 0.d0)
-  nrstot = dffts%nr1 * dffts%nr2 * dffts%nr3
-  do nu_i = 1, 3 * nat
-     call compute_dvloc (u(1, nu_i), .FALSE., dvlocin)
-     do nu_j = 1, 3 * nat
-        do is = 1, nspin_lsda
-        ! FIXME: use zgemm instead of dot_product
-           wdyn (nu_j, nu_i) = wdyn (nu_j, nu_i) + &
-                dot_product (drhous(1:dffts%nnr,is,nu_j), dvlocin) * &
-                omega / DBLE (nrstot)
+     wdyn (:,:) = (0.d0, 0.d0)
+     nrstot = dffts%nr1 * dffts%nr2 * dffts%nr3
+     do nu_i = 1, 3 * nat
+        call compute_dvloc (u(1, nu_i), .FALSE., dvlocin)
+        do im = 1, nmodes_l
+           nu_j = modes_l (im)
+           do is = 1, nspin_lsda
+           ! FIXME: use zgemm instead of dot_product
+              wdyn (nu_j, nu_i) = wdyn (nu_j, nu_i) + &
+                   dot_product (drhous(1:dffts%nnr,is,im), dvlocin) * &
+                   omega / DBLE (nrstot)
+           enddo
+        enddo
+
+     enddo
+     deallocate (dvlocin)
+     !
+     ! collect contributions from all pools (sum over k-points)
+     !
+     call mp_sum ( dyn00, inter_pool_comm )
+     call mp_sum ( wdyn, inter_pool_comm )
+     !
+     ! collect contributions from nodes of a pool (sum over G & R space)
+     !
+     call mp_sum ( wdyn, intra_bgrp_comm )
+
+     call zaxpy (3 * nat * 3 * nat, (1.d0, 0.d0), wdyn, 1, dyn00, 1)
+     !
+     !     force this term to be hermitean
+     !
+     do nu_i = 1, 3 * nat
+        do nu_j = 1, nu_i
+           dyn00(nu_i,nu_j) = 0.5d0*( dyn00(nu_i,nu_j) + CONJG(dyn00(nu_j,nu_i)))
+           dyn00(nu_j,nu_i) = CONJG(dyn00(nu_i,nu_j))
         enddo
      enddo
-
-  enddo
-  !
-  ! collect contributions from all pools (sum over k-points)
-  !
-  call mp_sum ( dyn00, inter_pool_comm )
-  call mp_sum ( wdyn, inter_pool_comm )
-  !
-  ! collect contributions from nodes of a pool (sum over G & R space)
-  !
-  call mp_sum ( wdyn, intra_bgrp_comm )
-
-  call zaxpy (3 * nat * 3 * nat, (1.d0, 0.d0), wdyn, 1, dyn00, 1)
-  !
-  !     force this term to be hermitean
-  !
-  do nu_i = 1, 3 * nat
-     do nu_j = 1, nu_i
-        dyn00(nu_i,nu_j) = 0.5d0*( dyn00(nu_i,nu_j) + CONJG(dyn00(nu_j,nu_i)))
-        dyn00(nu_j,nu_i) = CONJG(dyn00(nu_i,nu_j))
-     enddo
-  enddo
+  ENDIF
   !      call tra_write_matrix('drho dyn00',dyn00,u,nat)
   !
   !    add the augmentation term to the charge density and save it
   !
   allocate (drhoust(dfftp%nnr, nspin_mag , PERTS_PER_BATCH*npertx))
   drhoust=(0.d0,0.d0)
+  allocate (dbecsumt(nhm * (nhm + 1) /2, nat, nspin_mag, &
+                     PERTS_PER_BATCH*npertx))
   !
   !  The calculation of dbecsum is distributed across processors (see addusdbec)
   !  Sum over processors the contributions coming from each slice of bands
@@ -208,7 +253,7 @@ subroutine drho
      call mp_sum ( dbecsum, intra_bgrp_comm )
   END IF
 
-  IF (noncolin.and.okvan) CALL set_dbecsum_nc(dbecsum_nc, dbecsum, 3*nat)
+  IF (noncolin.and.okvan) CALL set_dbecsum_nc(dbecsum_nc, dbecsum, nmodes_l)
 
   mode = 0
   if (okpaw) becsumort=(0.0_DP,0.0_DP)
@@ -227,17 +272,24 @@ subroutine drho
      npe_offset = 0
      do irr = irr_batch, irr_end
         npe = npert(irr)
-        if (doublegrid) then
-           do is = 1, nspin_mag
-              do iper = 1, npe
-                 call fft_interpolate (dffts, drhous(:,is,mode+iper), dfftp, &
+        do iper = 1, npe
+           im = imode_l (mode + iper)
+           if (im == 0) then
+              drhoust (:,:,npe_offset+iper) = (0.d0, 0.d0)
+              dbecsumt (:,:,:,npe_offset+iper) = (0.d0, 0.d0)
+              cycle
+           endif
+           dbecsumt (:,:,:,npe_offset+iper) = dbecsum (:,:,:,im)
+           if (doublegrid) then
+              do is = 1, nspin_mag
+                 call fft_interpolate (dffts, drhous(:,is,im), dfftp, &
                                      drhoust(:,is,npe_offset+iper))
               enddo
-           enddo
-        else
-           call zcopy (dfftp%nnr*nspin_mag*npe, drhous(1,1,mode+1), 1, &
-                      drhoust(1,1,npe_offset+1), 1)
-        endif
+           else
+              call zcopy (dfftp%nnr*nspin_mag, drhous(1,1,im), 1, &
+                         drhoust(1,1,npe_offset+iper), 1)
+           endif
+        enddo
         npe_offset = npe_offset + npe
         mode = mode + npe
      enddo
@@ -247,7 +299,7 @@ subroutine drho
      
      ! Process augmentation density for entire batch
      mode_batch_start = mode - npe_total
-     call addusddens_pulay (drhoust, dbecsum(1,1,1,mode_batch_start+1), mode_batch_start, npe_total)
+     call addusddens_pulay (drhoust, dbecsumt, mode_batch_start, npe_total)
      
      ! Save buffers for all perturbations in batch
      do iper = 1, npe_total
@@ -261,7 +313,9 @@ subroutine drho
    IF (okpaw) call mp_sum ( becsumort, inter_pool_comm )
 
   deallocate (drhoust)
-  deallocate (dvlocin)
+  deallocate (dbecsumt)
+  deallocate (modes_l)
+  deallocate (imode_l)
   deallocate (dbecsum)
   if (noncolin) deallocate(dbecsum_nc)
   deallocate (drhous)

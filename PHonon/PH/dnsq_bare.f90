@@ -52,6 +52,9 @@ SUBROUTINE dnsq_bare
   USE wavefunctions, ONLY : evc  
   USE mp_images,     ONLY : intra_image_comm
   USE uspp_init,        ONLY : init_us_2
+  USE partial,       ONLY : nat_todo, nat_todo_input, atomo, set_local_atomo
+  USE symm_base,     ONLY : irt
+  USE lr_symm_base,  ONLY : nsymq
   !
   IMPLICIT NONE
   !
@@ -59,7 +62,9 @@ SUBROUTINE dnsq_bare
   !
   INTEGER :: i, j, k, icart, ios, is, na, nt, l, ih,        &
              ibeta, n, ihubst, ihubst1, ihubst2, nah, m, m1, m2,  &
-             ibnd, ldim, npw, npwq, ik, ikk, ikq, iundnsbare
+             ibnd, ldim, npw, npwq, ik, ikk, ikq, iundnsbare, na_l, nat_l
+  INTEGER, ALLOCATABLE :: atomo_l(:)
+  ! displaced atoms: the atoms to do and their symmetry images
   COMPLEX(DP), ALLOCATABLE :: dqsphi(:,:), dmqsphi(:,:), dwfcatom_(:) 
   LOGICAL :: exst
   ! 
@@ -127,7 +132,16 @@ SUBROUTINE dnsq_bare
      !
      WRITE(stdout,'(/5x,"Calculating the dnsbare matrix...")')
      dnsbare = (0.d0, 0.d0)
-     ! 
+     !
+     ! With nat_todo, the other displaced atoms are not needed
+     !
+     IF (nat_todo_input > 0) THEN
+        CALL set_local_atomo (nat, nat_todo, atomo, nsymq, irt, nat_l, atomo_l)
+     ELSE
+        nat_l = nat
+        atomo_l = [(na, na = 1, nat)]
+     ENDIF
+     !
      DO ik = 1, nksq
         !
         ikk = ikks(ik)
@@ -176,11 +190,13 @@ SUBROUTINE dnsq_bare
         !
         CALL get_buffer (swfcatomk, nwordwfcU, iuatswfc, ikk)      
         !
-        DO na = 1, nat
-           ! 
-           DO icart = 1, 3 
-              ! 
-              dqsphi  = (0.d0, 0.d0)  
+        DO na_l = 1, nat_l
+           !
+           na = atomo_l(na_l)
+           !
+           DO icart = 1, 3
+              !
+              dqsphi  = (0.d0, 0.d0)
               dmqsphi = (0.d0, 0.d0)
               !
               DO nah = 1, nat
@@ -268,6 +284,8 @@ SUBROUTINE dnsq_bare
         ENDDO ! na
         !
      ENDDO ! ik
+     !
+     DEALLOCATE (atomo_l)
      !
      CALL mp_sum (dnsbare, inter_pool_comm)
      !

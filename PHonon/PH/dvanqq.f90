@@ -37,7 +37,7 @@ subroutine dvanqq
   USE mp_bands, ONLY: intra_bgrp_comm
   USE mp,        ONLY: mp_sum
 
-  USE phus, ONLY : int1, int2, int4, int4_nc, int5, int5_so
+  USE phus, ONLY : int1, int2, int2_idx, int4, int4_nc, int5, int5_so
   USE partial, ONLY :  nat_todo, nat_todo_input, atomo, set_local_atomo
   USE lr_symm_base, ONLY  :  nsymq 
   USE symm_base,    ONLY  :  irt    
@@ -45,6 +45,7 @@ subroutine dvanqq
   USE eqv,        ONLY : vlocq
   USE qpoint,     ONLY : eigqts, xq
   USE control_lr, ONLY : lgamma, rec_code_read
+  USE control_ph, ONLY : trans
 
   implicit none
   !
@@ -79,8 +80,10 @@ subroutine dvanqq
   call start_clock ('dvanqq')
   int1(:,:,:,:,:) = (0.d0, 0.d0)
   int2(:,:,:,:,:) = (0.d0, 0.d0)
-  int4(:,:,:,:,:) = (0.d0, 0.d0)
-  int5(:,:,:,:,:) = (0.d0, 0.d0)
+  IF (trans) THEN
+     int4(:,:,:,:,:) = (0.d0, 0.d0)
+     int5(:,:,:,:,:) = (0.d0, 0.d0)
+  ENDIF
   allocate (sk  (  ngm))
   allocate (aux1(  ngm))
   allocate(aux35(9,128))
@@ -194,7 +197,7 @@ subroutine dvanqq
                        end do 
                        z9aux(4:9) = conjg(fact)*tpiba2*omega*z9aux(4:9)
                        !
-                       int2(ih,jh,1:3,na,nb) = conjg(z9aux(1:3)) * fact * fact1
+                       int2(ih,jh,1:3,int2_idx(na),nb) = conjg(z9aux(1:3)) * fact * fact1
                        ! 
                        z9aux(1:3) = z9aux(4:6)
                        z9aux( 4)  = z9aux (2)
@@ -202,7 +205,7 @@ subroutine dvanqq
                        z9aux(7)   = z9aux(3)
                        z9aux(8)   = z9aux(6)
                        !
-                       call zcopy(9, z9aux(1),1, int5(ijh,1,1,na,nb), size(int5,1)) 
+                       if (trans) call zcopy(9, z9aux(1),1, int5(ijh,1,1,na,nb), size(int5,1))
                        !
                     enddo
                     if (.not.lgamma) then
@@ -236,7 +239,7 @@ subroutine dvanqq
                        z9aux(7)   = z9aux(3)
                        z9aux(8)   = z9aux(6)
                        !
-                       call zcopy(9, z9aux(1),1, int4(ijh,1,1,nb,is), size(int4,1)) 
+                       if (trans) call zcopy(9, z9aux(1),1, int4(ijh,1,1,nb,is), size(int4,1))
                        !
                     enddo
                  endif
@@ -260,7 +263,8 @@ subroutine dvanqq
                           else 
                              na = na_l
                           end if 
-                          int2(jh,ih,ipol,na,nb) = int2(ih,jh,ipol,na,nb)
+                          int2(jh,ih,ipol,int2_idx(na),nb) = &
+                             int2(ih,jh,ipol,int2_idx(na),nb)
                        enddo
                     enddo
                  endif
@@ -272,11 +276,14 @@ subroutine dvanqq
 
   call mp_sum(  int1, intra_bgrp_comm )
   call mp_sum(  int2, intra_bgrp_comm )
-  call mp_sum(  int4, intra_bgrp_comm )
-  call mp_sum(  int5, intra_bgrp_comm )
+  IF (trans) THEN
+     call mp_sum(  int4, intra_bgrp_comm )
+     call mp_sum(  int5, intra_bgrp_comm )
+  ENDIF
 
-  IF (noncolin) THEN
-     CALL set_int12_nc(0)
+  IF (noncolin) CALL set_int12_nc(0)
+
+  IF (noncolin .AND. trans) THEN
      int4_nc = (0.d0, 0.d0)
      IF (lspinorb) int5_so = (0.d0, 0.d0)
      DO nt = 1, ntyp

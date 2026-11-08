@@ -30,7 +30,7 @@ SUBROUTINE dvqpsi_us_only (ik, uact, becp1, alphap)
    USE noncollin_module, ONLY : noncolin, npol, lspinorb
    USE uspp, ONLY: okvan, nkb, vkb, ofsbeta
    USE uspp_param, ONLY: nh, nhm
-   USE phus,      ONLY : int1, int1_nc, int2, int2_so
+   USE phus,      ONLY : int1, int1_nc, int2, int2_so, int2_idx
 
    USE qpoint,     ONLY : nksq, ikks, ikqs
    USE becmod,     ONLY : bec_type
@@ -211,7 +211,9 @@ SUBROUTINE dvqpsi_us_only (ik, uact, becp1, alphap)
       IF (okvan) THEN
          DO nb = 1, nat
             nu = 3 * (nb - 1)
-            IF ( abs (uact (nu + 1) ) + &
+            ! int2 is zero for the moving atoms that are not stored
+            IF ( int2_idx(nb) > 0 .AND. &
+                 abs (uact (nu + 1) ) + &
                  abs (uact (nu + 2) ) + &
                  abs (uact (nu + 3) ) > eps) THEN
                DO na = 1, nat
@@ -230,20 +232,20 @@ SUBROUTINE dvqpsi_us_only (ik, uact, becp1, alphap)
                                        ijs=ijs+1
                                        temp_ps1_nc(ikb,is)= &
                                                  temp_ps1_nc(ikb,is)+ &
-                                       int2_so(ih,jh,ipol,nb,na,ijs)* &
+                                       int2_so(ih,jh,ipol,int2_idx(nb),na,ijs)* &
                                         temp_becp1_nc(jkb,js)*uact(nu+ipol)
                                     END DO
                                  END DO
                               ELSE
                                  DO is=1,npol
                                     temp_ps1_nc(ikb,is)=temp_ps1_nc(ikb,is)+ &
-                                       int2(ih,jh,ipol,nb,na) * &
+                                       int2(ih,jh,ipol,int2_idx(nb),na) * &
                                        temp_becp1_nc(jkb,is)*uact(nu+ipol)
                                  END DO
                               END IF
                            ELSE
                               temp_ps1 (ikb) = temp_ps1 (ikb) + &
-                                  (int2 (ih, jh, ipol, nb, na) * &
+                                  (int2 (ih, jh, ipol, int2_idx(nb), na) * &
                                    temp_becp1_k(jkb) ) * uact (nu + ipol)
                            END IF
                         ENDDO ! ipol

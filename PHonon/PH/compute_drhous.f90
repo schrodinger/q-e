@@ -7,10 +7,11 @@
 !
 !
 !-----------------------------------------------------------------------
-subroutine compute_drhous (drhous, dbecsum, wgg, becq, alpq)
+subroutine compute_drhous (drhous, dbecsum, wgg, becq, alpq, nmodes, modes)
   !-----------------------------------------------------------------------
   !! This routine computes the part of the change of the charge density
   !! which is due to the orthogonalization constraint on wavefunctions.
+  !! Only the listed modes are computed, arrays are indexed by the list.
   !
   !
   USE kinds,      ONLY : DP
@@ -31,20 +32,19 @@ subroutine compute_drhous (drhous, dbecsum, wgg, becq, alpq)
   USE units_lr,   ONLY : iuwfc, lrwfc
   USE becmod,     ONLY : bec_type
   USE uspp_init,        ONLY : init_us_2
-  !
-  USE modes,      ONLY: u, num_rap_mode 
-  USE partial,    ONLY: nat_todo_input, comp_irr, atomo, nat_todo, set_local_atomo 
-  USE symm_base,  ONLY: irt 
-  USE lr_symm_base, ONLY: nsymq  
 
   implicit none
   !
   !     the dummy variables
   !
 
-  complex(DP) :: dbecsum (nhm * (nhm + 1) / 2, nat, nspin, 3 * nat)
+  integer, intent(in) :: nmodes
+  !! input: the number of modes to compute
+  integer, intent(in) :: modes (nmodes)
+  !! input: the modes to compute
+  complex(DP) :: dbecsum (nhm * (nhm + 1) / 2, nat, nspin, nmodes)
   !! output:the derivative of becsum
-  complex(DP) :: drhous (dffts%nnr, nspin, 3 * nat)
+  complex(DP) :: drhous (dffts%nnr, nspin, nmodes)
   !! output: add the orthogonality term
   type (bec_type) :: becq(nksq)  ! (nkb, nbnd)
   !! input: the becp with \(\text{psi}_{k+q}\)
@@ -53,9 +53,7 @@ subroutine compute_drhous (drhous, dbecsum, wgg, becq, alpq)
   real(DP) :: wgg (nbnd, nbnd, nksq)
   !! input: the weights
 
-  integer :: npw, npwq, ik, ikq, ikk, ig, nu_i, ibnd, ios, nat_l
-  integer,allocatable  :: atomo_l(:)
-  logical,allocatable  :: do_mode(:) 
+  integer :: npw, npwq, ik, ikq, ikk, ig, im, ibnd, ios
   ! counter on k points
   ! the point k+q
   ! record for wfcs at k point
@@ -74,18 +72,11 @@ subroutine compute_drhous (drhous, dbecsum, wgg, becq, alpq)
 
   call start_clock ('com_drhous')
   allocate (evcr( dffts%nnr, nbnd))
-  allocate(do_mode(3*nat)) 
   !
-  
   drhous(:,:,:) = (0.d0, 0.d0)
   dbecsum (:,:,:,:) = (0.d0, 0.d0)
-  if (nat_todo_input > 0 ) then 
-   call set_local_atomo(nat, nat_todo, atomo, nsymq, irt, nat_l, atomo_l)
-   do_mode = [(check_do_mode(nu_i), nu_i=1,3*nat)]
-   deallocate(atomo_l)
-  end if 
 
-  
+
   do ik = 1, nksq
      ikk = ikks(ik)
      ikq = ikqs(ik)
@@ -116,10 +107,9 @@ subroutine compute_drhous (drhous, dbecsum, wgg, becq, alpq)
      !   And compute the contribution of this k point to the change of
      !   the charge density
      !
-     do nu_i = 1, 3 * nat
-        if ((nat_todo_input == 0) .or.  do_mode(nu_i) )  & 
-            call incdrhous (drhous (1, current_spin, nu_i), weight, ik, &
-               dbecsum (1, 1, current_spin, nu_i), evcr, wgg, becq, alpq, nu_i)
+     do im = 1, nmodes
+        call incdrhous (drhous (1, current_spin, im), weight, ik, &
+             dbecsum (1, 1, current_spin, im), evcr, wgg, becq, alpq, modes(im))
      enddo
 
   enddo
@@ -127,23 +117,4 @@ subroutine compute_drhous (drhous, dbecsum, wgg, becq, alpq)
   deallocate(evcr)
   call stop_clock ('com_drhous')
   return
-  contains 
-     function check_do_mode(modenum)  result(todo)
-        implicit none 
-        logical  :: todo 
-        integer  :: modenum 
-        ! 
-        complex(dp)  :: ss 
-        integer       :: na_l, na_li  
-        ! 
-        todo = .false. 
-        if (.not. allocated(atomo_l)) return  
-        ss = (0.d0,0.d0)
-        do na_l =1, nat_l  
-          na_li = 3 * (atomo_l(na_l) - 1) 
-          ss = ss + dot_product(u(na_li+1:na_li+3, modenum), u(na_li+1:na_li+3, modenum)) 
-        end do 
-        todo = (real(ss) *real(ss) + dimag(ss) * dimag(ss) > 1.d-8) 
-        return 
-     end function check_do_mode  
 end subroutine compute_drhous

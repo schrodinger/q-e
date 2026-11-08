@@ -19,7 +19,7 @@ subroutine deallocate_phq
   USE modes,        ONLY : tmq, t, npert, u, name_rap_mode, num_rap_mode
   USE efield_mod,   ONLY : zstareu, zstarue, zstarue0, zstareu0, &
                            zstarue0_rec
-  USE phus,         ONLY : int1, int1_nc, int2, int2_so, &
+  USE phus,         ONLY : int1, int1_nc, int2, int2_so, int2_idx, &
                            int4, int4_nc, int5, int5_so, becsum_nc, &
                            becsumort, alphasum, alphasum_nc, &
                            alphap
@@ -90,6 +90,7 @@ subroutine deallocate_phq
 
   if(allocated(int1)) deallocate (int1)
   if(allocated(int2)) deallocate (int2)
+  if(allocated(int2_idx)) deallocate (int2_idx)
   if(allocated(int3)) deallocate (int3)
   if(allocated(int3_paw)) deallocate (int3_paw)
   if(allocated(int4)) deallocate (int4)

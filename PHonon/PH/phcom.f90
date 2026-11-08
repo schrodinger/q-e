@@ -137,6 +137,9 @@ MODULE phus
   !! int1 -> \int V_eff d/du (Q) d^3r
   COMPLEX (DP), ALLOCATABLE :: int2(:,:,:,:,:)     ! nhm, nhm, 3,nat, nat),&
   !! int2 -> \int d/du (V_loc) Q d^3r
+  INTEGER, ALLOCATABLE :: int2_idx(:)              ! nat
+  !! slot of the moving atom in the 4th index of int2 and int2_so, 0 if
+  !! not stored. Without trans only the atoms to do are stored
   COMPLEX (DP), ALLOCATABLE :: int4(:,:,:,:,:)     ! nhm*(nhm+1)/2, 3, 3, nat, nspin),&
   !! int4 -> \int V_eff d^2/dudu (Q) d^3r
   COMPLEX (DP), ALLOCATABLE :: int5(:,:,:,:,:)     ! nhm*(nhm+1)/2, 3, 3, nat, nat),&

@@ -37,7 +37,7 @@ SUBROUTINE phq_init()
   USE constants,            ONLY : eps8, tpi
   USE gvect,                ONLY : g
   USE klist,                ONLY : xk, ngk, igk_k
-  USE lsda_mod,             ONLY : lsda, current_spin, isk
+  USE lsda_mod,             ONLY : lsda, current_spin, isk, nspin
   USE buffers,              ONLY : get_buffer
   USE io_global,            ONLY : stdout
   USE wvfct,                ONLY : npwx, nbnd
@@ -45,13 +45,18 @@ SUBROUTINE phq_init()
   USE wavefunctions,        ONLY : evc
   USE noncollin_module,     ONLY : noncolin, domag, npol, lspinorb
   USE uspp,                 ONLY : okvan, vkb, nlcc_any, nkb
-  USE phus,                 ONLY : alphap
+  USE phus,                 ONLY : alphap, int2, int2_so, int2_idx
+  USE uspp_param,           ONLY : nhm
+  USE partial,              ONLY : nat_todo, nat_todo_input, atomo, &
+                                   set_local_atomo
+  USE symm_base,            ONLY : irt
+  USE lr_symm_base,         ONLY : nsymq
   USE nlcc_ph,              ONLY : drc
-  USE control_ph,           ONLY : trans, zue, epsil, all_done, lmultipole
+  USE control_ph,           ONLY : trans, zue, zeu, epsil, all_done, lmultipole
   USE units_lr,             ONLY : lrwfc, iuwfc
   USE mp,                   ONLY : mp_sum
   USE acfdtest,             ONLY : acfdt_is_active, acfdt_num_der
-  USE el_phon,              ONLY : elph_mat, iunwfcwann, npwq_refolded, &
+  USE el_phon,              ONLY : elph, elph_mat, iunwfcwann, npwq_refolded, &
                                    kpq,g_kpq,igqg,xk_gamma, lrwfcr
   USE wannier_gw,           ONLY : l_head
   USE lrus,                 ONLY : becp1, dpqq, dpqq_so
@@ -77,6 +82,10 @@ SUBROUTINE phq_init()
     ! counter on G vectors
   INTEGER :: ikqg         !for the case elph_mat=.true.
   INTEGER :: npw, npwq
+  INTEGER :: nat_int2
+    ! number of moving atoms stored in int2
+  INTEGER, ALLOCATABLE :: atomo_l(:)
+    ! atoms to do and their symmetry images
   REAL(DP) :: arg
     ! the argument of the phase
   COMPLEX(DP), ALLOCATABLE :: aux1(:,:), tevc(:,:)
@@ -314,8 +323,30 @@ SUBROUTINE phq_init()
           DEALLOCATE( tevc )
   ENDIF
   !
-  CALL dvanqq()
-  CALL drho()
+  ! int2 is nat x nat with trans, without it only the atoms to do are stored
+  ! (none for the electric field response only)
+  IF (okvan) THEN
+     ALLOCATE (int2_idx(nat))
+     int2_idx = 0
+     IF ( trans .OR. ((zeu .OR. elph) .AND. nat_todo_input == 0) ) THEN
+        nat_int2 = nat
+        int2_idx = [(na, na = 1, nat)]
+     ELSEIF ( zeu .OR. elph ) THEN
+        CALL set_local_atomo (nat, nat_todo, atomo, nsymq, irt, nat_int2, &
+                              atomo_l)
+        int2_idx(atomo_l) = [(na, na = 1, nat_int2)]
+        DEALLOCATE (atomo_l)
+     ELSE
+        nat_int2 = 0
+     ENDIF
+     ALLOCATE (int2(nhm, nhm, 3, nat_int2, nat))
+     IF (noncolin .AND. lspinorb) &
+        ALLOCATE (int2_so(nhm, nhm, 3, nat_int2, nat, nspin))
+  ENDIF
+  !
+  ! Bare displacement terms, not needed for the electric field response only
+  IF ( trans .OR. zeu .OR. elph ) CALL dvanqq()
+  IF ( trans .OR. zeu ) CALL drho()
   !
   IF ( ( epsil .OR. zue .OR. l_head) .AND. okvan ) THEN
      CALL compute_qdipol(dpqq)
@@ -339,11 +370,11 @@ SUBROUTINE phq_init()
      ! Calculate dnsbare, i.e. the bare variation of ns, 
      ! for all cartesian coordinates
      !
-     CALL dnsq_bare()
+     IF ( trans .OR. zeu ) CALL dnsq_bare()
      !
-     ! Calculate the orthogonality term in the USPP case
+     ! Calculate the orthogonality term in the USPP case, phonons only
      !
-     IF (okvan) CALL dnsq_orth()
+     IF (okvan .AND. trans) CALL dnsq_orth()
      !
   ENDIF
   !
