@@ -139,7 +139,9 @@ MODULE phus
   !! int2 -> \int d/du (V_loc) Q d^3r
   INTEGER, ALLOCATABLE :: int2_idx(:)              ! nat
   !! slot of the moving atom in the 4th index of int2 and int2_so, 0 if
-  !! not stored. Without trans only the atoms to do are stored
+  !! not stored, see phq_init
+  INTEGER, ALLOCATABLE :: int2_atoms(:)
+  !! atoms whose int2 rows dvanqq computes, see phq_init
   COMPLEX (DP), ALLOCATABLE :: int4(:,:,:,:,:)     ! nhm*(nhm+1)/2, 3, 3, nat, nspin),&
   !! int4 -> \int V_eff d^2/dudu (Q) d^3r
   COMPLEX (DP), ALLOCATABLE :: int5(:,:,:,:,:)     ! nhm*(nhm+1)/2, 3, 3, nat, nat),&
@@ -188,6 +190,8 @@ MODULE partial
   !! TRUE if this irr.rep. has been done
   LOGICAL :: all_comp
   !! if TRUE all representation have been computed
+  LOGICAL :: zeu_todo_only
+  !! TRUE if zeu needs only the computed irreps (nat_todo, no irrep split)
   INTERFACE 
     SUBROUTINE set_local_atomo(nat, nat_todo_, atomo_, nsym, irt,  nat_l, atomo_l) 
       IMPLICIT NONE 

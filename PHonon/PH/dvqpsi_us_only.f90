@@ -211,11 +211,11 @@ SUBROUTINE dvqpsi_us_only (ik, uact, becp1, alphap)
       IF (okvan) THEN
          DO nb = 1, nat
             nu = 3 * (nb - 1)
-            ! int2 is zero for the moving atoms that are not stored
-            IF ( int2_idx(nb) > 0 .AND. &
-                 abs (uact (nu + 1) ) + &
+            IF ( abs (uact (nu + 1) ) + &
                  abs (uact (nu + 2) ) + &
                  abs (uact (nu + 3) ) > eps) THEN
+               IF (int2_idx(nb) == 0) CALL errore('dvqpsi_us_only', &
+                  'int2 not stored for a moving atom', nb)
                DO na = 1, nat
                   ijkb0 = ofsbeta(na) 
                   nt = ityp(na) 

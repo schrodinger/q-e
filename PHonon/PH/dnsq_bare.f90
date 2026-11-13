@@ -52,9 +52,8 @@ SUBROUTINE dnsq_bare
   USE wavefunctions, ONLY : evc  
   USE mp_images,     ONLY : intra_image_comm
   USE uspp_init,        ONLY : init_us_2
-  USE partial,       ONLY : nat_todo, nat_todo_input, atomo, set_local_atomo
-  USE symm_base,     ONLY : irt
-  USE lr_symm_base,  ONLY : nsymq
+  USE control_ph,    ONLY : trans
+  USE partial,       ONLY : zeu_todo_only, nat_todo, atomo
   !
   IMPLICIT NONE
   !
@@ -133,10 +132,11 @@ SUBROUTINE dnsq_bare
      WRITE(stdout,'(/5x,"Calculating the dnsbare matrix...")')
      dnsbare = (0.d0, 0.d0)
      !
-     ! With nat_todo, the other displaced atoms are not needed
+     ! zeu: atoms of the computed irreps; phonons need all (dynmat_hub_bare)
      !
-     IF (nat_todo_input > 0) THEN
-        CALL set_local_atomo (nat, nat_todo, atomo, nsymq, irt, nat_l, atomo_l)
+     IF (zeu_todo_only .AND. .NOT. trans) THEN
+        nat_l = nat_todo
+        atomo_l = atomo(1:nat_todo)
      ELSE
         nat_l = nat
         atomo_l = [(na, na = 1, nat)]

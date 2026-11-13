@@ -35,7 +35,8 @@ subroutine drho
   USE wvfct,      ONLY : nbnd
   USE paw_variables,    ONLY : okpaw
   USE control_ph, ONLY : all_done, trans
-  USE partial,    ONLY : nat_todo, nat_todo_input, atomo, set_local_atomo
+  USE partial,    ONLY : nat_todo, nat_todo_input, atomo, set_local_atomo, &
+                         comp_irr, zeu_todo_only
   USE symm_base,  ONLY : irt
   USE lr_symm_base, ONLY : nsymq
   USE lrus,       ONLY : becp1
@@ -78,11 +79,12 @@ subroutine drho
        dbecsumt (:,:,:,:)
   ! dbecsum of the modes in the current batch
 
-  integer :: nmodes_l, im, na_l, nat_l
+  logical :: skip_irr
+  ! TRUE if the irreps not computed are skipped (zeu without trans)
+  integer :: im, nmodes_l, nat_l
   integer, allocatable :: modes_l (:), imode_l (:), atomo_l (:)
-  ! number of modes computed, their list, compact index of each mode (0
-  ! if not computed), atoms to do and their symmetry images
-  real(DP) :: ss
+  ! modes computed (nmodes_l, modes_l), slot of each mode (0 if not
+  ! computed), atoms to do and their symmetry images
   ! auxiliary to store bec at k+q
   ! auxiliary to store alphap at
   ! the change of the local potential
@@ -139,8 +141,8 @@ subroutine drho
      call stop_clock('nldyntot')
   ENDIF
   !
-  !   With nat_todo, only the modes moving the atoms to do (and their
-  !   symmetry images) are computed, the others stay zero
+  !   With nat_todo, drhous and dbecsum only for the modes moving the atoms
+  !   to do; records of the others hold only the bare augmentation term
   !
   allocate (modes_l (3 * nat))
   allocate (imode_l (3 * nat))
@@ -148,14 +150,9 @@ subroutine drho
   nmodes_l = 0
   if (nat_todo_input > 0) call set_local_atomo (nat, nat_todo, atomo, &
                                                 nsymq, irt, nat_l, atomo_l)
-
   do nu_i = 1, 3 * nat
      if (nat_todo_input > 0) then
-        ss = 0.d0
-        do na_l = 1, nat_l
-           ss = ss + sum (abs (u (3*atomo_l(na_l)-2:3*atomo_l(na_l), nu_i))**2)
-        enddo
-        if (ss * ss <= 1.d-8) cycle
+        if (.not. check_do_mode (nu_i)) cycle
      endif
      nmodes_l = nmodes_l + 1
      modes_l (nmodes_l) = nu_i
@@ -258,10 +255,23 @@ subroutine drho
   mode = 0
   if (okpaw) becsumort=(0.0_DP,0.0_DP)
   
-  ! Process irr values in batches of PERTS_PER_BATCH
-  do irr_batch = 1, nirr, PERTS_PER_BATCH
-     irr_end = min(irr_batch + PERTS_PER_BATCH - 1, nirr)
-     
+  ! zeu without trans reads only the computed irreps, see zstar_eu_us
+  skip_irr = zeu_todo_only .AND. .NOT. trans
+  !
+  ! Process irr values in batches of up to PERTS_PER_BATCH consecutive irr
+  irr_batch = 1
+  do while (irr_batch <= nirr)
+     if (skip_irr .and. .not. comp_irr(irr_batch)) then
+        mode = mode + npert(irr_batch)
+        irr_batch = irr_batch + 1
+        cycle
+     endif
+     irr_end = irr_batch
+     do while (irr_end < min(irr_batch + PERTS_PER_BATCH - 1, nirr))
+        if (skip_irr .and. .not. comp_irr(irr_end + 1)) exit
+        irr_end = irr_end + 1
+     enddo
+
      ! Calculate total perturbations in this batch
      npe_total = 0
      do irr = irr_batch, irr_end
@@ -306,6 +316,7 @@ subroutine drho
         nu_i = mode_batch_start + iper
         call save_buffer (drhoust (1, 1, iper), lrdrhous, iudrhous, nu_i)
      enddo
+     irr_batch = irr_end + 1
   enddo
    !
    !  Collect the sum over k points in different pools.
@@ -322,4 +333,22 @@ subroutine drho
 
   call stop_clock ('drho')
   return
+  contains
+     function check_do_mode(modenum)  result(todo)
+        !! TRUE if mode modenum moves the atoms to do, atomo_l must be allocated
+        implicit none
+        logical  :: todo
+        integer  :: modenum
+        !
+        complex(dp)  :: ss
+        integer       :: na_l, na_li
+        !
+        ss = (0.d0,0.d0)
+        do na_l =1, nat_l
+          na_li = 3 * (atomo_l(na_l) - 1)
+          ss = ss + dot_product(u(na_li+1:na_li+3, modenum), u(na_li+1:na_li+3, modenum))
+        end do
+        todo = (real(ss) *real(ss) + dimag(ss) * dimag(ss) > 1.d-8)
+        return
+     end function check_do_mode
 end subroutine drho

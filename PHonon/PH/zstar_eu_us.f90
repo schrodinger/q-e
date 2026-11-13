@@ -32,6 +32,7 @@ subroutine zstar_eu_us
   USE efield_mod,       ONLY : zstareu0
   USE phus,             ONLY : becsumort
   USE modes,            ONLY : u, npert, nirr
+  USE partial,          ONLY : comp_irr, zeu_todo_only
   USE units_ph,         ONLY : iucom, lrcom, lrebar, iuebar, &
                                lrdrhous, iudrhous
   USE units_lr,         ONLY : iuwfc, lrwfc, iudwf, lrdwf
@@ -169,6 +170,8 @@ subroutine zstar_eu_us
      npe = npert(irr)
      do imode = 1, npe
         mode = imode0 + imode
+        ! drho writes only the computed irreps without trans, see drho
+        if (zeu_todo_only .and. .not. comp_irr(irr)) cycle
         call get_buffer(drhoscfh, lrdrhous, iudrhous, mode)
         do jpol = 1, 3
            do is=1,nspin_mag
@@ -200,6 +203,7 @@ subroutine zstar_eu_us
      do irr = 1, nirr
         do imode = 1, npert (irr)
            mode = imode+imode0
+           if (zeu_todo_only .and. .not. comp_irr(irr)) cycle
            do jpol = 1, 3
               dvpsi = (0.d0,0.d0)
               !
@@ -278,6 +282,7 @@ subroutine zstar_eu_us
      do irr1 = 1, nirr
         do ipert = 1, npert (irr1)
            mode = imode0 + ipert
+           if (zeu_todo_only .and. .not. comp_irr(irr1)) cycle
            do nt=1,ntyp
               if (upf(nt)%tpawp) then
                  ijh=0

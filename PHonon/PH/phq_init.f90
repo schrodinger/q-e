@@ -45,10 +45,11 @@ SUBROUTINE phq_init()
   USE wavefunctions,        ONLY : evc
   USE noncollin_module,     ONLY : noncolin, domag, npol, lspinorb
   USE uspp,                 ONLY : okvan, vkb, nlcc_any, nkb
-  USE phus,                 ONLY : alphap, int2, int2_so, int2_idx
+  USE phus,                 ONLY : alphap, int2, int2_so, int2_idx, &
+                                   int2_atoms
   USE uspp_param,           ONLY : nhm
-  USE partial,              ONLY : nat_todo, nat_todo_input, atomo, &
-                                   set_local_atomo
+  USE partial,              ONLY : zeu_todo_only, nat_todo, nat_todo_input, &
+                                   atomo, set_local_atomo
   USE symm_base,            ONLY : irt
   USE lr_symm_base,         ONLY : nsymq
   USE nlcc_ph,              ONLY : drc
@@ -82,10 +83,8 @@ SUBROUTINE phq_init()
     ! counter on G vectors
   INTEGER :: ikqg         !for the case elph_mat=.true.
   INTEGER :: npw, npwq
-  INTEGER :: nat_int2
-    ! number of moving atoms stored in int2
-  INTEGER, ALLOCATABLE :: atomo_l(:)
-    ! atoms to do and their symmetry images
+  INTEGER :: nat_int2, nat_l
+    ! number of moving atoms stored in int2, number of atoms to do
   REAL(DP) :: arg
     ! the argument of the phase
   COMPLEX(DP), ALLOCATABLE :: aux1(:,:), tevc(:,:)
@@ -95,6 +94,37 @@ SUBROUTINE phq_init()
     ! temporary buffer to work with offload of arrays of derived types
 #endif
   !
+  !
+  ! Storage of int2 and the atoms dvanqq computes it for. Before all_done,
+  ! since elph without trans calls dvanqq in do_phonon
+  !
+  IF (okvan) THEN
+     ALLOCATE (int2_idx(nat))
+     int2_idx = 0
+     IF ( zeu_todo_only .AND. zeu .AND. .NOT. (trans .OR. elph) ) THEN
+        ! compact storage, only the atoms moving in the computed irreps
+        nat_int2 = nat_todo
+        int2_atoms = atomo(1:nat_todo)
+        int2_idx(int2_atoms) = [(na, na = 1, nat_todo)]
+     ELSEIF ( trans .OR. zeu .OR. elph ) THEN
+        ! full storage, computed for the atoms to do as in dvanqq before
+        nat_int2 = nat
+        int2_idx = [(na, na = 1, nat)]
+        IF (nat_todo_input > 0) THEN
+           CALL set_local_atomo (nat, nat_todo, atomo, nsymq, irt, nat_l, &
+                                 int2_atoms)
+        ELSE
+           int2_atoms = [(na, na = 1, nat)]
+        ENDIF
+     ELSE
+        ! electric field only
+        nat_int2 = 0
+        ALLOCATE (int2_atoms(0))
+     ENDIF
+     ALLOCATE (int2(nhm, nhm, 3, nat_int2, nat))
+     IF (noncolin .AND. lspinorb) &
+        ALLOCATE (int2_so(nhm, nhm, 3, nat_int2, nat, nspin))
+  ENDIF
   !
   IF (all_done) RETURN
   !
@@ -323,29 +353,8 @@ SUBROUTINE phq_init()
           DEALLOCATE( tevc )
   ENDIF
   !
-  ! int2 is nat x nat with trans, without it only the atoms to do are stored
-  ! (none for the electric field response only)
-  IF (okvan) THEN
-     ALLOCATE (int2_idx(nat))
-     int2_idx = 0
-     IF ( trans .OR. ((zeu .OR. elph) .AND. nat_todo_input == 0) ) THEN
-        nat_int2 = nat
-        int2_idx = [(na, na = 1, nat)]
-     ELSEIF ( zeu .OR. elph ) THEN
-        CALL set_local_atomo (nat, nat_todo, atomo, nsymq, irt, nat_int2, &
-                              atomo_l)
-        int2_idx(atomo_l) = [(na, na = 1, nat_int2)]
-        DEALLOCATE (atomo_l)
-     ELSE
-        nat_int2 = 0
-     ENDIF
-     ALLOCATE (int2(nhm, nhm, 3, nat_int2, nat))
-     IF (noncolin .AND. lspinorb) &
-        ALLOCATE (int2_so(nhm, nhm, 3, nat_int2, nat, nspin))
-  ENDIF
-  !
-  ! Bare displacement terms, not needed for the electric field response only
-  IF ( trans .OR. zeu .OR. elph ) CALL dvanqq()
+  ! Not needed for the electric field only, elph without trans calls dvanqq
+  IF ( trans .OR. zeu ) CALL dvanqq()
   IF ( trans .OR. zeu ) CALL drho()
   !
   IF ( ( epsil .OR. zue .OR. l_head) .AND. okvan ) THEN

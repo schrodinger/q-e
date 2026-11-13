@@ -29,6 +29,8 @@ subroutine zstar_eu
   USE units_lr,         ONLY : iuwfc, lrwfc, iudwf, lrdwf
   USE control_lr,       ONLY : nbnd_occ
   USE control_ph,       ONLY : done_zeu
+  USE partial,          ONLY : comp_irr, zeu_todo_only
+  USE io_global,        ONLY : stdout
   USE ph_restart,       ONLY : ph_writefile
   USE mp_pools,         ONLY : inter_pool_comm
   USE mp_bands,         ONLY : intra_bgrp_comm
@@ -60,6 +62,8 @@ subroutine zstar_eu
      do irr = 1, nirr
         do imode = 1, npert (irr)
            mode = imode+imode0
+           ! With zeu_todo_only, only the computed irreps
+           if (zeu_todo_only .and. .not. comp_irr(irr)) cycle
            dvpsi(:,:) = (0.d0, 0.d0)
            !
            ! recalculate  DeltaV*psi(ion) for mode nu
@@ -119,6 +123,25 @@ subroutine zstar_eu
         zstareu (ipol, ipol, na) = zstareu (ipol, ipol, na) + zv (ityp ( na) )
      enddo
   enddo
+  !
+  ! Z* of an atom moving in an irrep not computed is incomplete, zero it
+  !
+  if (zeu_todo_only) then
+     imode0 = 0
+     do irr = 1, nirr
+        if (.not. comp_irr(irr)) then
+           do mode = imode0 + 1, imode0 + npert (irr)
+              do na = 1, nat
+                 if (any (abs (u (3*na-2:3*na, mode)) > 1.d-6)) &
+                    zstareu (:,:,na) = 0.d0
+              enddo
+           enddo
+        endif
+        imode0 = imode0 + npert (irr)
+     enddo
+     WRITE( stdout, '(/,5x,"Z* computed only for the atoms to do (nat_todo),", &
+          & " the others are set to zero; the sum rule does not apply")')
+  endif
 
   done_zeu=.TRUE.
   call summarize_zeu()

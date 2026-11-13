@@ -68,7 +68,7 @@ RETURN
 END SUBROUTINE transform_int1_nc
 !
 !----------------------------------------------------------------------------
-SUBROUTINE transform_int2_nc(int2, nb, iflag)
+SUBROUTINE transform_int2_nc(nb, iflag)
 !----------------------------------------------------------------------------
 !! This routine sets \(\text{int2_so}\) for the atomic species which do not
 !! have a spin-orbit pseudopotential.
@@ -76,21 +76,21 @@ SUBROUTINE transform_int2_nc(int2, nb, iflag)
 USE kinds,                ONLY : DP
 USE ions_base,            ONLY : nat, ityp
 USE uspp_param,           ONLY : nh, nhm
-USE phus,                 ONLY : int2_so
+USE phus,                 ONLY : int2, int2_so
 !
 IMPLICIT NONE
 INTEGER :: nb, iflag
-COMPLEX(DP) :: int2(nhm,nhm,3,SIZE(int2_so,4),nat)
-! the 4th index runs over the stored moving atoms, see int2_idx
 !
 ! ... local variables
 !
-INTEGER :: ih, jh, np, na, ipol
+INTEGER :: ih, jh, np, na, ipol, nat2
+! nat2: moving atoms stored in int2 (4th index), zero if int2 is not used
 
+nat2 = SIZE(int2, 4)
 np=ityp(nb)
 DO ih = 1, nh(np)
    DO jh = 1, nh(np)
-      DO na=1,SIZE(int2_so,4)
+      DO na=1,nat2
          DO ipol=1,3
             IF (iflag==0) THEN
                int2_so(ih,jh,ipol,na,nb,1)=int2(ih,jh,ipol,na,nb)

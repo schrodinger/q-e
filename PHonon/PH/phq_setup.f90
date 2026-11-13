@@ -77,7 +77,8 @@ subroutine phq_setup
   USE dynmat,        ONLY : dyn, dyn_rec, dyn00
   USE efield_mod,    ONLY : epsilon, zstareu
   USE partial,       ONLY : comp_irr, atomo, nat_todo, all_comp, &
-                            done_irr
+                            done_irr, nat_todo_input, zeu_todo_only
+  USE mp_images,     ONLY : nimage
   USE gamma_gamma,   ONLY : has_equivalent, asr, nasr, n_diff_sites, &
                             equiv_atoms, n_equiv_atoms, with_symmetry
   USE ph_restart,    ONLY : ph_writefile, ph_readfile
@@ -377,6 +378,12 @@ subroutine phq_setup
   ENDDO
 
   DEALLOCATE(ifat)
+  !
+  ! zeu needs only the computed irreps unless images, start_irr/last_irr or
+  ! modenum change which irreps are computed
+  zeu_todo_only = nat_todo_input > 0 .AND. nimage == 1 .AND. &
+                  start_irr <= 1 .AND. last_irr_eff >= nirr .AND. &
+                  modenum == 0 .AND. .NOT. lgamma_gamma
   !
   !   Initialize done_irr, find max dimension of the irreps
   !

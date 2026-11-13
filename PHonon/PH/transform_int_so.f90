@@ -89,7 +89,7 @@ RETURN
 END SUBROUTINE transform_int1_so
 !
 !----------------------------------------------------------------------------
-SUBROUTINE transform_int2_so(int2,nb,iflag)
+SUBROUTINE transform_int2_so(nb,iflag)
 !----------------------------------------------------------------------------
 !! This routine rotates \(\text{int2}\) as appropriate for the spin-orbit case
 !! and saves it in \(\text{int2_so}\).
@@ -99,19 +99,19 @@ USE ions_base,            ONLY : nat, ityp
 USE uspp_param,           ONLY : nh, nhm
 USE noncollin_module,     ONLY : npol
 USE upf_spinorb,          ONLY : fcoef
-USE phus,                 ONLY : int2_so
+USE phus,                 ONLY : int2, int2_so
 !
 IMPLICIT NONE
 INTEGER :: nb, iflag
-COMPLEX(DP) :: int2(nhm,nhm,3,SIZE(int2_so,4),nat)
-! the 4th index runs over the stored moving atoms, see int2_idx
 !
 ! ... local variables
 !
-INTEGER :: ih, jh, lh, kh, ijs, np, is1, is2, na, ipol
+INTEGER :: ih, jh, lh, kh, ijs, np, is1, is2, na, ipol, nat2
+! nat2: moving atoms stored in int2 (4th index), zero if int2 is not used
 COMPLEX(DP) :: fact
 LOGICAL :: same_lj
 
+nat2 = SIZE(int2, 4)
 np=ityp(nb)
 DO ih = 1, nh(np)
    DO kh = 1, nh(np)
@@ -119,7 +119,7 @@ DO ih = 1, nh(np)
          DO jh = 1, nh(np)
             DO lh= 1, nh(np)
                IF (same_lj(lh,jh,np)) THEN
-                  DO na=1,SIZE(int2_so,4)
+                  DO na=1,nat2
                      DO ipol=1,3
                         IF (iflag==0) THEN
                            fact=int2(kh,lh,ipol,na,nb)

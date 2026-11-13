@@ -37,10 +37,8 @@ subroutine dvanqq
   USE mp_bands, ONLY: intra_bgrp_comm
   USE mp,        ONLY: mp_sum
 
-  USE phus, ONLY : int1, int2, int2_idx, int4, int4_nc, int5, int5_so
-  USE partial, ONLY :  nat_todo, nat_todo_input, atomo, set_local_atomo
-  USE lr_symm_base, ONLY  :  nsymq 
-  USE symm_base,    ONLY  :  irt    
+  USE phus, ONLY : int1, int2, int2_idx, int2_atoms, int4, int4_nc, int5, &
+                   int5_so
 
   USE eqv,        ONLY : vlocq
   USE qpoint,     ONLY : eigqts, xq
@@ -51,9 +49,6 @@ subroutine dvanqq
   !
   !   And the local variables
   !
-  integer  ::  nat_l
-  ! effective number of atoms to do when nat_todo_input > 0 
-  integer,allocatable :: atomo_l(:)
   integer :: nt, na, nb, ig, nta, ntb, ir, ih, jh, ijh, ipol, jpol, is, na_l, nb_l, i 
   ! counters
 
@@ -113,11 +108,6 @@ subroutine dvanqq
         qmod (ig) = sqrt (qmod (ig) ) * tpiba
      enddo
   endif
-  if (nat_todo_input > 0 ) then 
-      call set_local_atomo(nat, nat_todo, atomo, nsymq, irt, nat_l, atomo_l)
-  else 
-     nat_l = nat 
-  end if 
   !
   !   we start by computing the FT of the effective potential
   !
@@ -161,12 +151,8 @@ subroutine dvanqq
                                              * eigts2 (mill(2,ig), nb) &
                                              * eigts3 (mill(3,ig), nb)
                     enddo
-                    do na_l = 1, nat_l
-                       if (nat_l < nat ) then 
-                          na = atomo_l(na_l) 
-                       else 
-                          na = na_l
-                       end if 
+                    do na_l = 1, size (int2_atoms)
+                       na = int2_atoms(na_l)
                        fact = eigqts (na) * CONJG(eigqts (nb) )
                        !
                        !    nb is the atom of the augmentation function
@@ -257,12 +243,8 @@ subroutine dvanqq
                        do is = 1, nspin_mag
                           int1(jh,ih,ipol,nb,is) = int1(ih,jh,ipol,nb,is)
                        enddo
-                       do na_l = 1, nat_l
-                          if (nat_l < nat ) then 
-                             na = atomo_l(na_l)
-                          else 
-                             na = na_l
-                          end if 
+                       do na_l = 1, size (int2_atoms)
+                          na = int2_atoms(na_l)
                           int2(jh,ih,ipol,int2_idx(na),nb) = &
                              int2(ih,jh,ipol,int2_idx(na),nb)
                        enddo
@@ -288,12 +270,8 @@ subroutine dvanqq
      IF (lspinorb) int5_so = (0.d0, 0.d0)
      DO nt = 1, ntyp
         IF ( upf(nt)%tvanp ) THEN
-           DO na_l = 1, nat_l
-              IF (nat_l < nat)  THEN 
-                na = atomo_l(na_l)  
-              ELSE 
-                na = na_l 
-              END IF 
+           DO na_l = 1, SIZE(int2_atoms)
+              na = int2_atoms(na_l)
               IF (ityp(na)==nt) THEN
                  IF (upf(nt)%has_so) THEN
                     CALL transform_int4_so(int4,na)

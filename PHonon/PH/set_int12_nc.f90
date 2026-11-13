@@ -14,7 +14,7 @@ SUBROUTINE set_int12_nc(iflag)
 USE ions_base, ONLY : nat, ntyp => nsp, ityp
 USE noncollin_module, ONLY : noncolin, domag, lspinorb
 USE uspp_param, only: upf
-USE phus, ONLY : int1, int2, int1_nc, int2_so
+USE phus, ONLY : int1, int1_nc, int2_so
 USE lr_nc_mag,  ONLY : int1_nc_save
 IMPLICIT NONE
 INTEGER :: iflag
@@ -48,10 +48,10 @@ DO np = 1, ntyp
          IF (ityp(na)==np) THEN
             IF (upf(np)%has_so) THEN
                CALL transform_int1_so(int1,na,iflag)
-               CALL transform_int2_so(int2,na,iflag)
+               CALL transform_int2_so(na,iflag)
             ELSE
                CALL transform_int1_nc(int1,na,iflag)
-               IF (lspinorb) CALL transform_int2_nc(int2,na,iflag)
+               IF (lspinorb) CALL transform_int2_nc(na,iflag)
             END IF
          END IF
       END DO

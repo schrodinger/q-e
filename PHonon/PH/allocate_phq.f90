@@ -41,7 +41,7 @@ subroutine allocate_phq
   USE eqv,           ONLY : dpsi, evq, vlocq, dmuxc, dvpsi
   USE lr_symm_base,  ONLY : rtau
   USE control_lr,    ONLY : lgamma
-  USE control_ph,    ONLY : trans
+  USE control_ph,    ONLY : trans, zeu
   USE ldaU,          ONLY : lda_plus_u, Hubbard_lmax, nwfcU
   USE ldaU_ph,       ONLY : dnsbare, dnsorth, dnsbare_all_modes, wfcatomk, &
                             dwfcatomk, sdwfcatomk, wfcatomkpq, dwfcatomkpq,  &
@@ -115,8 +115,10 @@ subroutine allocate_phq
 
   if (okvan) then
      allocate (int1 ( nhm, nhm, 3, nat, nspin_mag))
+     ! not filled by dvanqq without trans or zeu, but written by write_rec
+     int1 = (0.d0, 0.d0)
      ! int2 and int2_so are allocated in phq_init, after phq_setup
-     if (okpaw) then
+     if (okpaw .AND. (trans .OR. zeu)) then
         allocate (becsumort ( nhm*(nhm+1)/2 , nat , nspin, 3*nat))
     endif
      ! int4 and int5 are used only for the dynamical matrix
