@@ -1,0 +1,14 @@
+electric field only response of antiferromagnetic insulator NiO at Gamma
+ &inputph
+  tr2_ph    = 1.0d-14
+  prefix    = 'NiO'
+  trans     = .false.
+  epsil     = .true.
+  zeu       = .false.
+  nat_todo  = 2
+  fildyn    = 'NiO.dynG_efield'
+  reduce_io = .true.
+  nmix_ph   = 8
+ /
+0.00000000  0.00000000  0.00000000
+3 4

@@ -1,0 +1,358 @@
+hwloc/linux: Ignoring PCI device with non-16bit domain.
+Pass --enable-32bits-pci-domain to configure to support such devices
+(warning: it would break the library ABI, don't enable unless really needed).
+
+     Program PHONON v.8.0dev starts on 10Nov2026 at  8:40:26 
+
+     This program is part of the open-source Quantum ESPRESSO suite
+     for quantum simulation of materials; please cite
+         "P. Giannozzi et al., J. Phys.:Condens. Matter 21 395502 (2009);
+         "P. Giannozzi et al., J. Phys.:Condens. Matter 29 465901 (2017);
+         "P. Giannozzi et al., J. Chem. Phys. 152 154105 (2020);
+          URL http://www.quantum-espresso.org", 
+     in publications or presentations arising from this work. More details at
+     http://www.quantum-espresso.org/quote
+
+     Parallel version (MPI), running on     1 processors
+
+     MPI processes distributed on     1 nodes
+     20101 MiB available memory on the printing compute node when the environment starts
+ 
+     Waiting for input...
+     Reading input from standard input
+
+
+     Dynamical matrices for q-points given in input
+     (   1q-points):
+       N         xq(1)         xq(2)         xq(3) 
+       1   0.000000000   0.000000000   0.000000000
+
+     Reading xml data from directory:
+
+     /scr/fonari/qe_pr2_test/NiO.save/
+ 
+     Subspace diagonalization in iterative solution of the eigenvalue problem:
+     a serial algorithm will be used
+
+     file Ni.pbesol-n-rrkjus_psl.0.1.UPF: wavefunction(s)  3D renormalized
+     file Ni.pbesol-n-rrkjus_psl.0.1.UPF: wavefunction(s)  3D renormalized
+
+     IMPORTANT: XC functional enforced from input :
+     Exchange-correlation= PBESOL
+                           (   1   4  10   8   0   0   0)
+     Any further DFT definition will be discarded
+     Please, verify this is what you really want
+
+ 
+     G-vector sticks info
+     --------------------
+     sticks:   dense  smooth     PW     G-vecs:    dense   smooth      PW
+     Sum         813     409    133                11627     4145     731
+ 
+     Using Slab Decomposition
+ 
+
+     Check: negative core charge=   -0.000983
+     Reading collected, re-writing distributed wavefunctions in /scr/fonari/qe_pr2_test/
+
+     Phonon calculation with DFPT+U; please cite
+     A. Floris et al., Phys. Rev. B 84, 161102(R) (2011)
+     A. Floris et al., Phys. Rev. B 101, 064305 (2020)
+     in publications or presentations arising from this work.
+
+     Number and degeneracy of irreps per q-point
+       N         xq(1)         xq(2)         xq(3)   N irreps
+       1   0.000000000   0.000000000   0.000000000       8
+        1   2   1   1   1   2   2   2
+
+     Calculation of q =    0.0000000   0.0000000   0.0000000
+
+     electric field and effective charges of the O atoms (nat_todo) of antiferro
+
+     bravais-lattice index     =            0
+     lattice parameter (alat)  =       7.8800  a.u.
+     unit-cell volume          =     244.6519 (a.u.)^3
+     number of atoms/cell      =            4
+     number of atomic types    =            3
+     kinetic-energy cut-off    =      25.0000  Ry
+     charge density cut-off    =     200.0000  Ry
+     convergence threshold     =      1.0E-14
+     beta                      =       0.7000
+     number of iterations used =            8
+     Exchange-correlation= PBESOL
+                           (   1   4  10   8   0   0   0)
+      Hubbard parameters:
+      U ( 1)     =  3.00000000
+      U ( 2)     =  3.00000000
+
+
+     celldm(1)=    7.88000  celldm(2)=    0.00000  celldm(3)=    0.00000
+     celldm(4)=    0.00000  celldm(5)=    0.00000  celldm(6)=    0.00000
+
+     crystal axes: (cart. coord. in units of alat)
+               a(1) = (  1.0000  0.5000  0.5000 )  
+               a(2) = (  0.5000  1.0000  0.5000 )  
+               a(3) = (  0.5000  0.5000  1.0000 )  
+
+     reciprocal axes: (cart. coord. in units 2 pi/alat)
+               b(1) = (  1.5000 -0.5000 -0.5000 )  
+               b(2) = ( -0.5000  1.5000 -0.5000 )  
+               b(3) = ( -0.5000 -0.5000  1.5000 )  
+
+
+     Atoms inside the unit cell: 
+
+     Cartesian axes
+
+     site n.  atom      mass           positions (alat units)
+        1  Ni1    58.6930   tau(    1) = (    0.00000    0.00000    0.00000  )
+        2  Ni2    58.6930   tau(    2) = (    0.50000    0.50000    0.00000  )
+        3  O      16.0000   tau(    3) = (    0.50000    0.00000    0.00000  )
+        4  O      16.0000   tau(    4) = (    1.00000    0.50000    0.00000  )
+
+     Computing dynamical matrix for 
+                    q = (   0.0000000   0.0000000   0.0000000 )
+ 
+     13 Sym.Ops. (with q -> -q+G )
+
+
+     G cutoff =  314.5739  (  11627 G-vectors)     FFT grid: ( 45, 45, 45)
+     G cutoff =  157.2870  (   4145 G-vectors)  smooth grid: ( 32, 32, 32)
+     number of k points=     8
+                       cart. coord. in units 2pi/alat
+        k(    1) = (   0.0000000   0.0000000   0.0000000), wk =   0.1250000
+        k(    2) = (   0.2500000   0.2500000  -0.7500000), wk =   0.3750000
+        k(    3) = (   0.5000000  -0.5000000  -0.5000000), wk =   0.3750000
+        k(    4) = (  -0.2500000  -0.2500000  -0.2500000), wk =   0.1250000
+        k(    5) = (   0.0000000   0.0000000   0.0000000), wk =   0.1250000
+        k(    6) = (   0.2500000   0.2500000  -0.7500000), wk =   0.3750000
+        k(    7) = (   0.5000000  -0.5000000  -0.5000000), wk =   0.3750000
+        k(    8) = (  -0.2500000  -0.2500000  -0.2500000), wk =   0.1250000
+
+     PseudoPot. # 1 for Ni read from file:
+     /home/fonari/QE-builds/q-e-develop/pseudo/Ni.pbesol-n-rrkjus_psl.0.1.UPF
+     MD5 check sum: 8a65ecc087b22b902f7e15bb4f925df7
+     Pseudo is Ultrasoft + core correction, Zval = 10.0
+     Generated using "atomic" code by A. Dal Corso  v.5.0.2 svn rev. 9415
+     Using radial grid of 1195 points,  6 beta functions with: 
+                l(1) =   0
+                l(2) =   0
+                l(3) =   1
+                l(4) =   1
+                l(5) =   2
+                l(6) =   2
+     Q(r) pseudized with 0 coefficients 
+
+
+     PseudoPot. # 2 for Ni read from file:
+     /home/fonari/QE-builds/q-e-develop/pseudo/Ni.pbesol-n-rrkjus_psl.0.1.UPF
+     MD5 check sum: 8a65ecc087b22b902f7e15bb4f925df7
+     Pseudo is Ultrasoft + core correction, Zval = 10.0
+     Generated using "atomic" code by A. Dal Corso  v.5.0.2 svn rev. 9415
+     Using radial grid of 1195 points,  6 beta functions with: 
+                l(1) =   0
+                l(2) =   0
+                l(3) =   1
+                l(4) =   1
+                l(5) =   2
+                l(6) =   2
+     Q(r) pseudized with 0 coefficients 
+
+
+     PseudoPot. # 3 for O  read from file:
+     /home/fonari/QE-builds/q-e-develop/pseudo/O.pbesol-n-rrkjus_psl.0.1.UPF
+     MD5 check sum: f27e8aef0904343e863161fc6edd5707
+     Pseudo is Ultrasoft + core correction, Zval =  6.0
+     Generated using &quot;atomic&quot; code by A. Dal Corso  v.6.3MaX
+     Using radial grid of 1095 points,  4 beta functions with: 
+                l(1) =   0
+                l(2) =   0
+                l(3) =   1
+                l(4) =   1
+     Q(r) pseudized with 0 coefficients 
+
+
+     Mode symmetry, D_3d (-3m)  point group:
+
+
+     Electric field:
+     Dielectric constant
+     Born effective charges as d Force / d E
+
+
+     Atomic displacements:
+     There are    8 irreducible representations
+
+     Representation     1      1 modes -  To be done
+
+     Representation     2      2 modes -  To be done
+
+     Representation     3      1 modes -  To be done
+
+     Representation     4      1 modes -  Not done in this run
+
+     Representation     5      1 modes -  Not done in this run
+
+     Representation     6      2 modes -  Not done in this run
+
+     Representation     7      2 modes -  To be done
+
+     Representation     8      2 modes -  Not done in this run
+
+     Compute atoms:     3,    4,
+
+
+
+     Atomic wfc used for the projector on the Hubbard manifold are NOT orthogonalized
+
+     Calculating the dnsbare matrix...
+     PHONON       :      1.06s CPU      1.18s WALL
+
+
+     Electric Fields Calculation
+
+      iter #   1 total cpu time :     5.2 secs   av.it.:   7.4
+      thresh= 1.000E-02 alpha_mix =  0.700 |ddv_scf|^2 =  3.648E-08
+
+      iter #   2 total cpu time :     7.1 secs   av.it.:  13.5
+      thresh= 1.910E-05 alpha_mix =  0.700 |ddv_scf|^2 =  7.436E-09
+
+      iter #   3 total cpu time :     9.1 secs   av.it.:  14.0
+      thresh= 8.623E-06 alpha_mix =  0.700 |ddv_scf|^2 =  4.835E-10
+
+      iter #   4 total cpu time :    11.1 secs   av.it.:  13.9
+      thresh= 2.199E-06 alpha_mix =  0.700 |ddv_scf|^2 =  2.498E-10
+
+      iter #   5 total cpu time :    13.0 secs   av.it.:  11.9
+      thresh= 1.580E-06 alpha_mix =  0.700 |ddv_scf|^2 =  2.275E-10
+
+      iter #   6 total cpu time :    14.8 secs   av.it.:  12.0
+      thresh= 1.508E-06 alpha_mix =  0.700 |ddv_scf|^2 =  2.449E-13
+
+      iter #   7 total cpu time :    16.8 secs   av.it.:  14.0
+      thresh= 4.949E-08 alpha_mix =  0.700 |ddv_scf|^2 =  3.392E-15
+
+     End of electric fields calculation
+
+          Dielectric constant in cartesian axis 
+
+          (      17.143151739       3.556894836       3.556894836 )
+          (       3.556894836      17.143151739       3.556894836 )
+          (       3.556894836       3.556894836      17.143151739 )
+
+     Z* computed only for the atoms to do (nat_todo), the others are set to zero; the sum rule does not apply
+
+          Effective charges (d Force / dE) in cartesian axis without acoustic sum rule applied (asr)
+
+           atom    1  Ni1   Mean Z*:        0.00000
+      Ex  (        0.00000        0.00000        0.00000 )
+      Ey  (        0.00000        0.00000        0.00000 )
+      Ez  (        0.00000        0.00000        0.00000 )
+           atom    2  Ni2   Mean Z*:        0.00000
+      Ex  (        0.00000        0.00000        0.00000 )
+      Ey  (        0.00000        0.00000        0.00000 )
+      Ez  (        0.00000        0.00000        0.00000 )
+           atom    3  O     Mean Z*:       -2.21400
+      Ex  (       -2.21400       -0.11584       -0.11584 )
+      Ey  (       -0.11584       -2.21400       -0.11584 )
+      Ez  (       -0.11584       -0.11584       -2.21400 )
+           atom    4  O     Mean Z*:       -2.21400
+      Ex  (       -2.21400       -0.11584       -0.11584 )
+      Ey  (       -0.11584       -2.21400       -0.11584 )
+      Ez  (       -0.11584       -0.11584       -2.21400 )
+
+          Effective charges Sum: Mean:       -4.42799
+             -4.42799       -0.23169       -0.23169
+             -0.23169       -4.42799       -0.23169
+             -0.23169       -0.23169       -4.42799
+
+          Effective charges (d Force / dE) in cartesian axis with asr applied: 
+           atom    1  Ni1   Mean Z*:        1.10700
+      E*x (        1.10700        0.05792        0.05792 )
+      E*y (        0.05792        1.10700        0.05792 )
+      E*z (        0.05792        0.05792        1.10700 )
+           atom    2  Ni2   Mean Z*:        1.10700
+      E*x (        1.10700        0.05792        0.05792 )
+      E*y (        0.05792        1.10700        0.05792 )
+      E*z (        0.05792        0.05792        1.10700 )
+           atom    3  O     Mean Z*:       -1.10700
+      E*x (       -1.10700       -0.05792       -0.05792 )
+      E*y (       -0.05792       -1.10700       -0.05792 )
+      E*z (       -0.05792       -0.05792       -1.10700 )
+           atom    4  O     Mean Z*:       -1.10700
+      E*x (       -1.10700       -0.05792       -0.05792 )
+      E*y (       -0.05792       -1.10700       -0.05792 )
+      E*z (       -0.05792       -0.05792       -1.10700 )
+ 
+     PHONON       :     21.01s CPU     21.27s WALL
+
+     INITIALIZATION: 
+     phq_setup    :      0.17s CPU      0.18s WALL (       1 calls)
+     phq_init     :      0.53s CPU      0.58s WALL (       1 calls)
+ 
+     phq_init     :      0.53s CPU      0.58s WALL (       1 calls)
+     set_drhoc    :      0.00s CPU      0.00s WALL (       1 calls)
+     init_vloc    :      0.02s CPU      0.02s WALL (       1 calls)
+     init_us_1    :      0.11s CPU      0.12s WALL (       1 calls)
+     init_us_2    :      0.01s CPU      0.01s WALL (     136 calls)
+     newd         :      0.04s CPU      0.06s WALL (       1 calls)
+     dvanqq       :      0.19s CPU      0.19s WALL (       1 calls)
+     drho         :      0.30s CPU      0.34s WALL (       1 calls)
+     drhous       :      0.15s CPU      0.15s WALL (       1 calls)
+     cmpt_qdipol  :      0.00s CPU      0.00s WALL (       1 calls)
+ 
+     DIELECTRIC CONSTANT AND EFFECTIVE CHARGES:
+     solve_e      :     15.50s CPU     15.65s WALL (       1 calls)
+     dielec       :      0.00s CPU      0.00s WALL (       1 calls)
+     zstar_eu     :      4.44s CPU      4.45s WALL (       1 calls)
+     psymdvscf    :      0.85s CPU      0.85s WALL (      15 calls)
+     newdq        :      0.90s CPU      0.90s WALL (       7 calls)
+     adddvscf     :      0.02s CPU      0.02s WALL (     144 calls)
+     com_dvloc    :      0.01s CPU      0.01s WALL (      48 calls)
+     addcore      :      0.02s CPU      0.02s WALL (      36 calls)
+ 
+     dvqpsi_us    :      3.02s CPU      3.02s WALL (      48 calls)
+     dvqpsi_us_on :      0.03s CPU      0.04s WALL (      48 calls)
+ 
+     add_vuspsi   :      0.20s CPU      0.20s WALL (    3939 calls)
+     addusdbec    :      0.03s CPU      0.03s WALL (     240 calls)
+ 
+     lr_addusdden :      0.52s CPU      0.52s WALL (       8 calls)
+ 
+     dnsq_bare    :      0.03s CPU      0.04s WALL (       1 calls)
+     dwfc         :      0.01s CPU      0.01s WALL (   10176 calls)
+     swfc         :      0.08s CPU      0.08s WALL (    1440 calls)
+     delta_sphi   :      1.74s CPU      1.74s WALL (    6240 calls)
+     dnsq_scf     :      0.03s CPU      0.03s WALL (       6 calls)
+     adddvhubscf  :      0.21s CPU      0.21s WALL (     288 calls)
+ 
+      General routines
+     calbec       :      0.60s CPU      0.61s WALL (   14929 calls)
+     fft          :      0.47s CPU      0.47s WALL (    1351 calls)
+     ffts         :      0.02s CPU      0.02s WALL (     152 calls)
+     fftw         :     10.00s CPU     10.07s WALL (  101458 calls)
+     davcio       :      0.00s CPU      0.00s WALL (       8 calls)
+     write_rec    :      0.00s CPU      0.00s WALL (       7 calls)
+ 
+      Additional routines
+     ch_psi       :     11.08s CPU     11.15s WALL (    3939 calls)
+     last         :      0.59s CPU      0.59s WALL (    3939 calls)
+     Hesh         :      0.02s CPU      0.02s WALL (    3939 calls)
+     ch_psi_all_k :      0.57s CPU      0.57s WALL (    3939 calls)
+     ch_psi_calbe :      0.20s CPU      0.20s WALL (    3939 calls)
+     h_psi_bgrp   :     10.23s CPU     10.30s WALL (    3939 calls)
+     h_psi        :     10.23s CPU     10.30s WALL (    3939 calls)
+     h_psi:pot    :     10.11s CPU     10.18s WALL (    3939 calls)
+     h_psi:calbec :      0.21s CPU      0.21s WALL (    3939 calls)
+     s_psi_bgrp   :      0.45s CPU      0.45s WALL (    9542 calls)
+     s_psi        :      0.42s CPU      0.42s WALL (    9542 calls)
+ 
+ 
+     PHONON       :     21.01s CPU     21.27s WALL
+
+ 
+   This run was terminated on:   8:40:47  10Nov2026            
+
+=------------------------------------------------------------------------------=
+   JOB DONE.
+=------------------------------------------------------------------------------=
